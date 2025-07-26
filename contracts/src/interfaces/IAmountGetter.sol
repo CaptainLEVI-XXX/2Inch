@@ -4,20 +4,22 @@ pragma solidity ^0.8.28;
 import {Address} from "../libraries/AddressLib.sol";
 import {MakerTraits} from "../libraries/MakerTraitLib.sol";
 
-interface IAmountGetter {
+interface IOrderMixin {
     struct Order {
         uint256 salt;
-        Address maker;
-        Address receiver;
-        Address makerAsset;
-        Address takerAsset;
+        address maker;
+        address receiver;
+        address makerAsset;
+        address takerAsset;
         uint256 makingAmount;
         uint256 takingAmount;
-        MakerTraits makerTraits;
+        uint256 makerTraits;
     }
+}
 
+interface IAmountGetter {
     function getTakingAmount(
-        Order calldata order,
+        IOrderMixin.Order calldata order,
         bytes calldata extension,
         bytes32 orderHash,
         address taker,
@@ -27,7 +29,7 @@ interface IAmountGetter {
     ) external view returns (uint256);
 
     function getMakingAmount(
-        Order calldata order,
+        IOrderMixin.Order calldata order,
         bytes calldata extension,
         bytes32 orderHash,
         address taker,
