@@ -28,12 +28,12 @@ library ChainlinkVolatilityLib {
     error StaleVolatilityData();
 
     function setUpTokenFeeds(
+        VolatilityStorage storage self,
         address[] calldata token,
         address[] calldata volatility24h,
         address[] calldata volatility7d,
-        address[] calldata priceFeed,
-        VolatilityStorage storage self
-    ) internal returns (TokenFeeds memory) {
+        address[] calldata priceFeed
+    ) internal {
         for (uint256 i = 0; i < token.length; i++) {
             self.tokenfeeds[token[i]] = TokenFeeds({
                 volatility24h: IAggregatorV3Interface(volatility24h[i]),

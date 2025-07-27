@@ -4,10 +4,17 @@ pragma solidity ^0.8.28;
 import {FixedPointMathLib} from "@solady/utils/FixedPointMathLib.sol";
 import {IAmountGetter, IOrderMixin} from "./interfaces/IAmountGetter.sol";
 import {CustomRevert} from "./libraries/CustomRevert.sol";
+import {ChainlinkVolatilityLib} from "./libraries/ChainlinkVolatilityLib.sol";
 
 contract VolatilitySpreadCalculator is IAmountGetter {
     using FixedPointMathLib for uint256;
     using CustomRevert for bytes4;
+    using ChainlinkVolatilityLib for ChainlinkVolatilityLib.VolatilityStorage;
+
+    // ============ STORAGE ============
+    ChainlinkVolatilityLib.VolatilityStorage internal volatilityStorage;
+
+    address public admin;
 
     // constants
     uint256 private constant BASIS_POINTS = 10000;
@@ -25,6 +32,7 @@ contract VolatilitySpreadCalculator is IAmountGetter {
 
     error SpreadTooHigh();
     error InvalidParam();
+    error RestrictedOperation();
 
     // Struct
     struct SpreadParams {
@@ -33,6 +41,10 @@ contract VolatilitySpreadCalculator is IAmountGetter {
         uint256 maxSpreadBps; // Maximum spread (e.g., 200 = 2%)
         uint8 volatilityWindow; // 0=24h, 1=7d, 2=blended
         bool useTargetToken; // true=use makerAsset, false=use takerAsset for volatility
+    }
+
+    constructor(address _admin) {
+        admin = _admin;
     }
 
     // ============ MAIN FUNCTIONS ============
@@ -166,5 +178,34 @@ contract VolatilitySpreadCalculator is IAmountGetter {
         );
     }
 
-    function _getTokenVolatility(address token, uint8 window) internal view returns (uint256) {}
+    function _getTokenVolatility(address token, uint8 window) internal view returns (uint256) {
+        return volatilityStorage.getTokenVolatility(token, window);
+    }
+
+    /**
+     * @notice Preview volatility for a token
+     */
+    function previewVolatility(address token, uint8 volatilityWindow)
+        external
+        view
+        returns (uint256 currentVolatility)
+    {
+        return volatilityStorage.previewVolatility(token, volatilityWindow);
+    }
+
+    // ============ ADMIN FUNCTIONS ============
+
+    /**
+     * @notice Add multiple tokens with their feeds in batch
+     * @dev In production: add onlyOwner modifier
+     */
+    function addTokenFeeds(
+        address[] calldata tokens,
+        address[] calldata volatility24h,
+        address[] calldata volatility7d,
+        address[] calldata priceFeeds
+    ) external {
+        if (msg.sender != admin) RestrictedOperation.selector.revertWith();
+        volatilityStorage.setUpTokenFeeds(tokens, volatility24h, volatility7d, priceFeeds);
+    }
 }
