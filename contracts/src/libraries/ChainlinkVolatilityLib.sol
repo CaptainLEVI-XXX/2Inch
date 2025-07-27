@@ -74,39 +74,6 @@ library ChainlinkVolatilityLib {
         return _getVolatilityFromFeed(volatilityFeed);
     }
 
-    /**
-     * @dev Check if a token is supported
-     * @param self Storage pointer for the volatility data
-     * @param token Token address to check
-     * @return supported True if token is supported
-     */
-    function isTokenSupported(VolatilityStorage storage self, address token) internal view returns (bool supported) {
-        return self.tokenfeeds[token].isSupported;
-    }
-
-    /**
-     * @dev Update token feeds (admin function)
-     * @param self Storage pointer for the volatility data
-     * @param token Token address to update
-     * @param volatility24h 24h volatility feed address
-     * @param volatility7d 7d volatility feed address
-     * @param priceFeed Price feed address
-     */
-    function updateTokenFeed(
-        VolatilityStorage storage self,
-        address token,
-        IAggregatorV3Interface volatility24h,
-        IAggregatorV3Interface volatility7d,
-        IAggregatorV3Interface priceFeed
-    ) internal {
-        self.tokenfeeds[token] = TokenFeeds({
-            volatility24h: volatility24h,
-            volatility7d: volatility7d,
-            priceFeed: priceFeed,
-            isSupported: true
-        });
-    }
-
     // ============ INTERNAL FUNCTIONS ============
 
     /**
