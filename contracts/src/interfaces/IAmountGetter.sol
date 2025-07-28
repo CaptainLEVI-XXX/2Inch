@@ -7,13 +7,13 @@ import {MakerTraits} from "../libraries/MakerTraitLib.sol";
 interface IOrderMixin {
     struct Order {
         uint256 salt;
-        address maker;
-        address receiver;
-        address makerAsset;
-        address takerAsset;
+        Address maker;
+        Address receiver;
+        Address makerAsset;
+        Address takerAsset;
         uint256 makingAmount;
         uint256 takingAmount;
-        uint256 makerTraits;
+        MakerTraits makerTraits;
     }
 }
 

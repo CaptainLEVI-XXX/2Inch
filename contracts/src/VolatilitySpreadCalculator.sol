@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+import {console} from "forge-std/console.sol";
 import {FixedPointMathLib} from "@solady/utils/FixedPointMathLib.sol";
 import {IAmountGetter, IOrderMixin} from "./interfaces/IAmountGetter.sol";
 import {CustomRevert} from "./libraries/CustomRevert.sol";
 import {ChainlinkVolatilityLib} from "./libraries/ChainlinkVolatilityLib.sol";
+import {AddressLib, Address} from "./libraries/AddressLib.sol";
 
 contract VolatilitySpreadCalculator is IAmountGetter {
     using FixedPointMathLib for uint256;
     using CustomRevert for bytes4;
     using ChainlinkVolatilityLib for ChainlinkVolatilityLib.VolatilityStorage;
+    using AddressLib for Address;
 
     // ============ STORAGE ============
     ChainlinkVolatilityLib.VolatilityStorage internal volatilityStorage;
@@ -64,10 +67,14 @@ contract VolatilitySpreadCalculator is IAmountGetter {
         SpreadParams memory params = _decodeExtraData(extraData);
 
         // determine which token to use for volatility
-        address targetToken = params.useTargetToken ? order.makerAsset : order.takerAsset;
+        Address targetToken = params.useTargetToken ? order.makerAsset : order.takerAsset;
+
+        console.log("I was here: ");
+
+        address targetTokenAddress = targetToken.get();
 
         // Get Valatility for the target token
-        uint256 currentVolatility = _getTokenVolatility(targetToken, params.volatilityWindow);
+        uint256 currentVolatility = _getTokenVolatility(targetTokenAddress, params.volatilityWindow);
 
         // calculate Dynamic Spread
         uint256 dynamicSpread = _calculateDynamicSpread(
@@ -94,12 +101,15 @@ contract VolatilitySpreadCalculator is IAmountGetter {
         bytes calldata extraData
     ) external view returns (uint256 makingAmount) {
         SpreadParams memory params = _decodeExtraData(extraData);
+        // SpreadParams memory params = abi.decode(extraData, (SpreadParams));
 
         // Determine ehich Token to use for volatality calculation
-        address targetToken = params.useTargetToken ? order.makerAsset : order.takerAsset;
+        Address targetToken = params.useTargetToken ? order.makerAsset : order.takerAsset;
+
+        address targetTokenAddress = targetToken.get();
 
         // Get volatility for the target token
-        uint256 currentVolatility = _getTokenVolatility(targetToken, params.volatilityWindow);
+        uint256 currentVolatility = _getTokenVolatility(targetTokenAddress, params.volatilityWindow);
 
         // Calculate dynamic spread
         uint256 dynamicSpread = _calculateDynamicSpread(
@@ -149,7 +159,9 @@ contract VolatilitySpreadCalculator is IAmountGetter {
         uint8 volatilityWindow
     ) external view returns (uint256 currentVolatility, uint256 dynamicSpread) {
         currentVolatility = _getTokenVolatility(tokenA, volatilityWindow);
+        console.log("current Vailatility: ", currentVolatility);
         dynamicSpread = _calculateDynamicSpread(baseSpreadBps, volatilityMultiplier, maxSpreadBps, currentVolatility);
+        console.log("dynamic spread: ", dynamicSpread);
     }
 
     /**
@@ -201,11 +213,15 @@ contract VolatilitySpreadCalculator is IAmountGetter {
      */
     function addTokenFeeds(
         address[] calldata tokens,
-        address[] calldata volatility24h,
-        address[] calldata volatility7d,
-        address[] calldata priceFeeds
+        address[] calldata priceFeeds,
+        bool[] calldata isStablecoin,
+        uint256[] calldata volatilityOverrides
     ) external {
         if (msg.sender != admin) RestrictedOperation.selector.revertWith();
-        volatilityStorage.setUpTokenFeeds(tokens, volatility24h, volatility7d, priceFeeds);
+        volatilityStorage.setUpTokenFeeds(tokens, priceFeeds, isStablecoin, volatilityOverrides);
+    }
+
+    function resolveExtension(address, /* taker */ bytes calldata extension) external view returns (bytes memory) {
+        return extension;
     }
 }
