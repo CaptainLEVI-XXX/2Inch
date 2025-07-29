@@ -37,7 +37,7 @@ contract IntegrationTest is Test {
     using MakerTraitsLib for MakerTraits;
 
     // ============ CONSTANTS ============
-    uint256 constant MAINNET_FORK_BLOCK = 20_800_000;
+    uint256 constant MAINNET_FORK_BLOCK = 23020785;
 
     // Mainnet addresses
     address constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
@@ -56,14 +56,12 @@ contract IntegrationTest is Test {
     uint256 private constant _HAS_EXTENSION_FLAG = 1 << 249;
     uint256 private constant _ALLOW_MULTIPLE_FILLS_FLAG = 1 << 254;
 
-    bytes32 constant ORDER_TYPEHASH = keccak256(
-        "Order(uint256 salt,address maker,address receiver,address makerAsset,address takerAsset,uint256 makingAmount,uint256 takingAmount,uint256 makerTraits)"
-    );
-
     // ============ STATE VARIABLES ============
     VolatilitySpreadCalculator public calculator;
-    uint256 alicePrivateKey = 0xA11CE;
-    uint256 bobPrivateKey = 0xB0B;
+    
+    // Use Foundry's default test accounts with known private keys
+    uint256 alicePrivateKey = 0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d;
+    uint256 bobPrivateKey = 0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a;
     address alice;
     address bob;
 
@@ -73,6 +71,9 @@ contract IntegrationTest is Test {
 
         alice = vm.addr(alicePrivateKey);
         bob = vm.addr(bobPrivateKey);
+
+        console.log("Alice address:", alice);
+        console.log("Bob address:", bob);
 
         calculator = new VolatilitySpreadCalculator(address(this));
 
@@ -94,7 +95,7 @@ contract IntegrationTest is Test {
         vm.prank(bob);
         USDC.safeApprove(address(LIMIT_ORDER_PROTOCOL), type(uint256).max);
 
-        // Setup volatility feeds
+        // Setup volatility feeds with override values for testing
         address[] memory tokens = new address[](3);
         address[] memory priceFeeds = new address[](3);
         bool[] memory isStablecoin = new bool[](3);
@@ -103,12 +104,12 @@ contract IntegrationTest is Test {
         tokens[0] = WETH;
         priceFeeds[0] = ETH_USD_FEED;
         isStablecoin[0] = false;
-        volatilityOverrides[0] = 0;
+        volatilityOverrides[0] = 2000; // 20% volatility for testing
 
         tokens[1] = USDC;
         priceFeeds[1] = USDC_USD_FEED;
         isStablecoin[1] = true;
-        volatilityOverrides[1] = 0;
+        volatilityOverrides[1] = 0; // Will use default stablecoin volatility
 
         tokens[2] = DAI;
         priceFeeds[2] = address(0);
@@ -117,228 +118,6 @@ contract IntegrationTest is Test {
 
         calculator.addTokenFeeds(tokens, priceFeeds, isStablecoin, volatilityOverrides);
     }
-
-    // function buildOrderWithVolatilitySpread(
-    //     address maker,
-    //     address makerAsset,
-    //     address takerAsset,
-    //     uint256 makingAmount,
-    //     uint256 takingAmount,
-    //     VolatilitySpreadCalculator.SpreadParams memory spreadParams
-    // ) internal view returns (ILimitOrderProtocol.Order memory order, bytes memory args) {
-    //     // Encode spread parameters
-    //     bytes memory spreadData = abi.encode(spreadParams);
-
-    //     // Build extension data
-    //     bytes memory makingAmountData = abi.encode(spreadData);
-    //     bytes memory takingAmountData = abi.encode(spreadData);
-    //     // Replace the offset calculation section with:
-    //     uint256 makingAmountDataStart = 32;
-    //     uint256 takingAmountDataStart = makingAmountDataStart + makingAmountData.length;
-
-    //     // Build extension with proper offsets
-    //     // uint256 dataStart = 32; // After offsets
-    //     // uint256[] memory offsets = new uint256[](8);
-
-    //     // offsets[0] = makingAmountData.length > 0 ? dataStart : 0;
-    //     // offsets[1] = takingAmountData.length > 0 ? dataStart + makingAmountData.length : 0;
-    //     // offsets[2] = 0; // predicate
-    //     // offsets[3] = 0; // permit
-    //     // offsets[4] = 0; // preInteraction
-    //     // offsets[5] = 0; // postInteraction
-    //     // offsets[6] = 0;
-    //     // offsets[7] = 0;
-
-    //     // Pack offsets as 4-byte values
-    //     bytes memory offsets = abi.encodePacked(
-    //         uint32(makingAmountDataStart),
-    //         uint32(takingAmountDataStart),
-    //         uint32(takingAmountDataStart + takingAmountData.length), // predicate (empty)
-    //         uint32(takingAmountDataStart + takingAmountData.length), // permit (empty)
-    //         uint32(takingAmountDataStart + takingAmountData.length), // preInteraction (empty)
-    //         uint32(takingAmountDataStart + takingAmountData.length), // postInteraction (empty)
-    //         uint32(0),
-    //         uint32(0)
-    //     );
-
-    //     // // Pack offsets into single uint256
-    //     // uint256 packedOffsets = 0;
-    //     // for (uint256 i = 0; i < 8; i++) {
-    //     //     packedOffsets |= (offsets[i] << (i * 32));
-    //     // }
-
-    //     // Build extension
-    //     // bytes memory extension = abi.encodePacked(packedOffsets, makingAmountData, takingAmountData);
-    //     // Build extension
-    //     // bytes memory extension = abi.encodePacked(offsets, makingAmountData, takingAmountData);
-    //     // Build the extension data that will be passed to the calculator
-    //     bytes memory extension = abi.encodePacked(
-    //         address(calculator), // making amount getter
-    //         spreadData, // data for making amount
-    //         address(calculator), // taking amount getter
-    //         spreadData // data for taking amount
-    //     );
-
-    //     // Calculate salt from extension hash
-    //     // uint256 salt = uint256(keccak256(extension)) & type(uint160).max;
-    //     uint256 salt = (uint256(uint160(address(calculator))) << 96);
-
-    //     // Build makerTraits with extension flag
-    //     uint256 makerTraitsValue = _ALLOW_MULTIPLE_FILLS_FLAG;
-
-    //     order = ILimitOrderProtocol.Order({
-    //         salt: salt,
-    //         maker: Address.wrap(uint160(maker)),
-    //         receiver: Address.wrap(0),
-    //         makerAsset: Address.wrap(uint160(makerAsset)),
-    //         takerAsset: Address.wrap(uint160(takerAsset)),
-    //         makingAmount: makingAmount,
-    //         takingAmount: takingAmount,
-    //         makerTraits: MakerTraits.wrap(makerTraitsValue)
-    //     });
-
-    //     // For fillOrderArgs, we need to pass the extension as the args parameter
-    //     // args = extension;
-    //     // For the volatility calculator, we just pass the spread params as args
-    //     // args = abi.encode(spreadParams);
-    //     // Build args for fillOrderArgs: target + extension + interaction
-    //     args = abi.encodePacked(
-    //         address(calculator), // target (20 bytes)
-    //         extension, // extension data
-    //         bytes("") // interaction (empty)
-    //     );
-    // }
-
-    // function buildOrderWithVolatilitySpread(
-    //     address maker,
-    //     address makerAsset,
-    //     address takerAsset,
-    //     uint256 makingAmount,
-    //     uint256 takingAmount,
-    //     VolatilitySpreadCalculator.SpreadParams memory spreadParams
-    // ) internal view returns (ILimitOrderProtocol.Order memory order, bytes memory args) {
-    //     // Encode spread parameters
-    //     bytes memory spreadData = abi.encode(spreadParams);
-
-    //     // Build makingAmountData and takingAmountData
-    //     bytes memory makingAmountData = abi.encodePacked(address(calculator), spreadData);
-    //     bytes memory takingAmountData = abi.encodePacked(address(calculator), spreadData);
-
-    //     // Build extension with offsets
-    //     bytes memory extension;
-    //     {
-    //         uint256 makingAmountOffset = 0x20; // 32 bytes for offsets
-    //         uint256 takingAmountOffset = makingAmountOffset + makingAmountData.length;
-
-    //         // Pack offsets as 32-bit values
-    //         bytes memory offsets = abi.encodePacked(
-    //             uint32(makingAmountOffset),
-    //             uint32(takingAmountOffset),
-    //             uint32(takingAmountOffset + takingAmountData.length), // predicate
-    //             uint32(takingAmountOffset + takingAmountData.length), // permit
-    //             uint32(takingAmountOffset + takingAmountData.length), // preInteraction
-    //             uint32(takingAmountOffset + takingAmountData.length), // postInteraction
-    //             uint32(0),
-    //             uint32(0)
-    //         );
-
-    //         extension = abi.encodePacked(offsets, makingAmountData, takingAmountData);
-    //     }
-
-    //     // For resolver pattern: salt = (resolver << 96) | extension_offset
-    //     // Extension offset in args is after target address (20 bytes)
-    //     uint256 salt = (uint256(uint160(address(calculator))) << 96) | 20;
-
-    //     // Build args: target + extension + interaction
-    //     args = abi.encodePacked(
-    //         address(0), // no target needed for resolver pattern
-    //         extension,
-    //         bytes("") // no interaction
-    //     );
-
-    //     // Build order without extension flag (using resolver pattern)
-    //     uint256 makerTraitsValue = _HAS_EXTENSION_FLAG;
-
-    //     order = ILimitOrderProtocol.Order({
-    //         salt: salt,
-    //         maker: Address.wrap(uint160(maker)),
-    //         receiver: Address.wrap(0),
-    //         makerAsset: Address.wrap(uint160(makerAsset)),
-    //         takerAsset: Address.wrap(uint160(takerAsset)),
-    //         makingAmount: makingAmount,
-    //         takingAmount: takingAmount,
-    //         makerTraits: MakerTraits.wrap(makerTraitsValue)
-    //     });
-    // }
-
-    // function buildOrderWithVolatilitySpread(
-    //     address maker,
-    //     address makerAsset,
-    //     address takerAsset,
-    //     uint256 makingAmount,
-    //     uint256 takingAmount,
-    //     VolatilitySpreadCalculator.SpreadParams memory spreadParams
-    // ) internal view returns (ILimitOrderProtocol.Order memory order, bytes memory args) {
-    //     // Encode spread parameters
-    //     bytes memory spreadData = abi.encode(spreadParams);
-
-    //     // For resolver pattern, makingAmountData and takingAmountData contain the resolver address + data
-    //     bytes memory makingAmountData = abi.encodePacked(address(calculator), spreadData);
-    //     bytes memory takingAmountData = abi.encodePacked(address(calculator), spreadData);
-
-    //     // Build extension
-    //     bytes memory extension;
-    //     {
-    //         // Calculate cumulative offsets
-    //         uint256 offset = 0;
-    //         uint256[] memory offsets = new uint256[](8);
-
-    //         // makingAmountData
-    //         offsets[0] = offset;
-    //         offset += makingAmountData.length;
-
-    //         // takingAmountData
-    //         offsets[1] = offset;
-    //         offset += takingAmountData.length;
-
-    //         // predicate, permit, preInteraction, postInteraction (all empty)
-    //         for (uint256 i = 2; i < 6; i++) {
-    //             offsets[i] = offset;
-    //         }
-
-    //         // Pack offsets into single uint256
-    //         uint256 packedOffsets = 0;
-    //         for (uint256 i = 0; i < 8; i++) {
-    //             packedOffsets |= (offsets[i] << (32 * i));
-    //         }
-
-    //         extension = abi.encodePacked(packedOffsets, makingAmountData, takingAmountData);
-    //     }
-
-    //     // Calculate salt from extension hash
-    //     uint256 salt = uint256(keccak256(extension)) & type(uint160).max;
-
-    //     // Set makerTraits with HAS_EXTENSION flag
-    //     uint256 makerTraitsValue = _HAS_EXTENSION_FLAG | _ALLOW_MULTIPLE_FILLS_FLAG;
-
-    //     order = ILimitOrderProtocol.Order({
-    //         salt: salt,
-    //         maker: Address.wrap(uint160(maker)),
-    //         receiver: Address.wrap(0),
-    //         makerAsset: Address.wrap(uint160(makerAsset)),
-    //         takerAsset: Address.wrap(uint160(takerAsset)),
-    //         makingAmount: makingAmount,
-    //         takingAmount: takingAmount,
-    //         makerTraits: MakerTraits.wrap(makerTraitsValue)
-    //     });
-
-    //     // For fillOrderArgs, args = target (0) + extension + interaction (empty)
-    //     args = abi.encodePacked(
-    //         address(0), // target (not used with extension)
-    //         extension,
-    //         bytes("") // interaction
-    //     );
-    // }
 
     function buildOrderWithVolatilitySpread(
         address maker,
@@ -352,34 +131,36 @@ contract IntegrationTest is Test {
         bytes memory spreadData = abi.encode(spreadParams);
 
         // Build making/taking amount getters according to 1inch format:
-        // address (20 bytes) + selector (4 bytes) + arguments
-        bytes memory makingAmountGetter =
-            abi.encodePacked(address(calculator), calculator.getMakingAmount.selector, spreadData);
+        // Address (20 bytes) + Selector (4 bytes) + Packed arguments
+        bytes memory makingAmountGetter = abi.encodePacked(
+            address(calculator),
+            calculator.getMakingAmount.selector,
+            spreadData
+        );
 
-        bytes memory takingAmountGetter =
-            abi.encodePacked(address(calculator), calculator.getTakingAmount.selector, spreadData);
+        bytes memory takingAmountGetter = abi.encodePacked(
+            address(calculator),
+            calculator.getTakingAmount.selector,
+            spreadData
+        );
 
         // Build extension with proper offsets
         bytes memory extension;
         {
-            // Calculate offsets (each is 4 bytes)
-            uint32[] memory offsets = new uint32[](8);
-            uint32 currentOffset = 32; // Start after offsets
-
-            offsets[0] = 0; // MakerAssetSuffix (empty)
-            offsets[1] = 0; // TakerAssetSuffix (empty)
-            offsets[2] = currentOffset + uint32(makingAmountGetter.length); // MakingAmountGetter end
-            offsets[3] = currentOffset + uint32(makingAmountGetter.length) + uint32(takingAmountGetter.length); // TakingAmountGetter end
-            offsets[4] = offsets[3]; // Predicate (empty)
-            offsets[5] = offsets[3]; // MakerPermit (empty)
-            offsets[6] = offsets[3]; // PreInteraction (empty)
-            offsets[7] = offsets[3]; // PostInteraction (empty)
-
+            // Calculate cumulative offsets
+            uint32 offset = 32; // Start after offsets header
+            
             // Pack offsets as 4-byte values
-            bytes memory packedOffsets;
-            for (uint256 i = 0; i < 8; i++) {
-                packedOffsets = abi.encodePacked(packedOffsets, offsets[i]);
-            }
+            bytes memory packedOffsets = abi.encodePacked(
+                uint32(0), // MakerAssetSuffix (empty)
+                uint32(0), // TakerAssetSuffix (empty)
+                uint32(offset + makingAmountGetter.length), // MakingAmountGetter end offset
+                uint32(offset + makingAmountGetter.length + takingAmountGetter.length), // TakingAmountGetter end offset
+                uint32(offset + makingAmountGetter.length + takingAmountGetter.length), // Predicate (empty)
+                uint32(offset + makingAmountGetter.length + takingAmountGetter.length), // MakerPermit (empty)
+                uint32(offset + makingAmountGetter.length + takingAmountGetter.length), // PreInteraction (empty)
+                uint32(offset + makingAmountGetter.length + takingAmountGetter.length)  // PostInteraction (empty)
+            );
 
             extension = abi.encodePacked(packedOffsets, makingAmountGetter, takingAmountGetter);
         }
@@ -387,9 +168,7 @@ contract IntegrationTest is Test {
         // Calculate salt: upper 96 bits random + lower 160 bits extension hash
         uint256 extensionHash = uint256(keccak256(extension)) & type(uint160).max;
         uint256 randomSalt = uint256(keccak256(abi.encodePacked(block.timestamp, maker, makingAmount))) >> 160;
-        // uint256 salt = (randomSalt << 160) | extensionHash;
-        // For resolver pattern, the salt encodes the resolver address
-        uint256 salt = (uint256(uint160(address(calculator))) << 96) | 0;
+        uint256 salt = (randomSalt << 160) | extensionHash;
 
         // Build order with extension flag
         uint256 makerTraitsValue = _HAS_EXTENSION_FLAG | _ALLOW_MULTIPLE_FILLS_FLAG;
@@ -405,14 +184,8 @@ contract IntegrationTest is Test {
             makerTraits: MakerTraits.wrap(makerTraitsValue)
         });
 
-        // Args for fillOrderArgs: target + extension + interaction
-        // args = abi.encodePacked(
-        //     address(0), // no specific target
-        //     extension, // the extension data
-        //     bytes("") // no taker interaction
-        // );
-        // And the args would be simpler
-        args = spreadData; // Just the spread parameters
+        // Args for fillOrderArgs: extension data
+        args = extension;
     }
 
     function signOrder(ILimitOrderProtocol.Order memory order, uint256 privateKey)
@@ -422,10 +195,11 @@ contract IntegrationTest is Test {
     {
         // Get the order hash directly from the protocol
         bytes32 orderHash = LIMIT_ORDER_PROTOCOL.hashOrder(order);
+        // bytes32 orderHash = 
 
         (uint8 v, bytes32 r_, bytes32 s) = vm.sign(privateKey, orderHash);
 
-        // Pack v and s into vs
+        // Pack v and s into vs according to 1inch format
         vs = bytes32((uint256(v - 27) << 255) | uint256(s));
         r = r_;
     }
@@ -434,18 +208,18 @@ contract IntegrationTest is Test {
     function testFullOrderFlowWithVolatilitySpread() public {
         // Setup spread parameters
         VolatilitySpreadCalculator.SpreadParams memory params = VolatilitySpreadCalculator.SpreadParams({
-            baseSpreadBps: 50,
-            volatilityMultiplier: 200,
-            maxSpreadBps: 200,
-            volatilityWindow: 0,
-            useTargetToken: true
+            baseSpreadBps: 50,      // 0.5% base spread
+            volatilityMultiplier: 200, // 2x multiplier
+            maxSpreadBps: 200,      // 2% max spread
+            volatilityWindow: 0,    // Use 24h volatility
+            useTargetToken: true    // Use makerAsset (WETH) for volatility
         });
 
         // Preview the spread
         (uint256 volatility, uint256 expectedSpread) = calculator.previewSpread(
             WETH, params.baseSpreadBps, params.volatilityMultiplier, params.maxSpreadBps, params.volatilityWindow
         );
-        console.log("Current volatility:", volatility);
+        console.log("Current volatility (bps):", volatility);
         console.log("Expected spread (bps):", expectedSpread);
 
         // Build order: Alice sells 1 WETH for USDC
@@ -461,16 +235,26 @@ contract IntegrationTest is Test {
         uint256 bobWethBefore = WETH.balanceOf(bob);
         uint256 bobUsdcBefore = USDC.balanceOf(bob);
 
+        console.log("\nBalances before fill:");
+        console.log("Alice WETH:", aliceWethBefore);
+        console.log("Alice USDC:", aliceUsdcBefore);
+        console.log("Bob WETH:", bobWethBefore);
+        console.log("Bob USDC:", bobUsdcBefore);
+
         // Bob fills the order (with spread applied)
         vm.prank(bob);
         (uint256 makingAmount, uint256 takingAmount,) = LIMIT_ORDER_PROTOCOL.fillOrderArgs(
             order,
             r,
             vs,
-            1 ether,
-            0, // takerTraits
-            args // Pass extension as args
+            1 ether,  // Fill full amount
+            0,        // takerTraits
+            args      // Pass extension as args
         );
+
+        console.log("\nFill results:");
+        console.log("Making amount (WETH):", makingAmount);
+        console.log("Taking amount (USDC):", takingAmount);
 
         // Verify balances
         assertEq(WETH.balanceOf(alice), aliceWethBefore - makingAmount, "Alice WETH balance incorrect");
@@ -479,13 +263,14 @@ contract IntegrationTest is Test {
         assertEq(USDC.balanceOf(bob), bobUsdcBefore - takingAmount, "Bob USDC balance incorrect");
 
         // Verify spread was applied
-        uint256 actualSpreadBps = ((takingAmount - 3000 * 1e6) * 10000) / (3000 * 1e6);
+        uint256 baseAmount = 3000 * 1e6;
+        uint256 actualSpreadBps = ((takingAmount - baseAmount) * 10000) / baseAmount;
         console.log("Actual spread applied (bps):", actualSpreadBps);
         assertEq(actualSpreadBps, expectedSpread, "Spread mismatch");
 
-        // Log results
-        console.log("Order filled successfully!");
-        console.log("Making amount (WETH):", makingAmount);
-        console.log("Taking amount (USDC):", takingAmount);
+        // Verify the spread increased the taking amount
+        assertGt(takingAmount, 3000 * 1e6, "Taking amount should be higher due to spread");
+        
+        console.log("\nOrder filled successfully with volatility spread!");
     }
 }
