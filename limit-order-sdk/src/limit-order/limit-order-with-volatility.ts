@@ -28,7 +28,7 @@ export class LimitOrderWithVolatility extends LimitOrder {
         public readonly volatilityExtension: VolatilitySpreadExtension
     ) {
         // Enable the extension flags needed for volatility calculation
-        makerTraits.enableExtension() // Enable extension processing
+        makerTraits.withExtension() // Enable extension processing
         
         super(
             {...orderInfo, receiver: volatilityExtension.contractAddress},
