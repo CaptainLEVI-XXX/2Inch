@@ -4,4 +4,9 @@ out = "out"
 libs = ["lib"]
 via_ir= true
 
+
+[rpc_endpoints]
+sepolia = "${ETH_RPC_URL}"
+
+
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

@@ -58,7 +58,7 @@ contract IntegrationTest is Test {
 
     // ============ STATE VARIABLES ============
     VolatilitySpreadCalculator public calculator;
-    
+
     // Use Foundry's default test accounts with known private keys
     uint256 alicePrivateKey = 0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d;
     uint256 bobPrivateKey = 0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a;
@@ -132,24 +132,18 @@ contract IntegrationTest is Test {
 
         // Build making/taking amount getters according to 1inch format:
         // Address (20 bytes) + Selector (4 bytes) + Packed arguments
-        bytes memory makingAmountGetter = abi.encodePacked(
-            address(calculator),
-            calculator.getMakingAmount.selector,
-            spreadData
-        );
+        bytes memory makingAmountGetter =
+            abi.encodePacked(address(calculator), calculator.getMakingAmount.selector, spreadData);
 
-        bytes memory takingAmountGetter = abi.encodePacked(
-            address(calculator),
-            calculator.getTakingAmount.selector,
-            spreadData
-        );
+        bytes memory takingAmountGetter =
+            abi.encodePacked(address(calculator), calculator.getTakingAmount.selector, spreadData);
 
         // Build extension with proper offsets
         bytes memory extension;
         {
             // Calculate cumulative offsets
             uint32 offset = 32; // Start after offsets header
-            
+
             // Pack offsets as 4-byte values
             bytes memory packedOffsets = abi.encodePacked(
                 uint32(0), // MakerAssetSuffix (empty)
@@ -159,7 +153,7 @@ contract IntegrationTest is Test {
                 uint32(offset + makingAmountGetter.length + takingAmountGetter.length), // Predicate (empty)
                 uint32(offset + makingAmountGetter.length + takingAmountGetter.length), // MakerPermit (empty)
                 uint32(offset + makingAmountGetter.length + takingAmountGetter.length), // PreInteraction (empty)
-                uint32(offset + makingAmountGetter.length + takingAmountGetter.length)  // PostInteraction (empty)
+                uint32(offset + makingAmountGetter.length + takingAmountGetter.length) // PostInteraction (empty)
             );
 
             extension = abi.encodePacked(packedOffsets, makingAmountGetter, takingAmountGetter);
@@ -195,7 +189,7 @@ contract IntegrationTest is Test {
     {
         // Get the order hash directly from the protocol
         bytes32 orderHash = LIMIT_ORDER_PROTOCOL.hashOrder(order);
-        // bytes32 orderHash = 
+        // bytes32 orderHash =
 
         (uint8 v, bytes32 r_, bytes32 s) = vm.sign(privateKey, orderHash);
 
@@ -208,11 +202,11 @@ contract IntegrationTest is Test {
     function testFullOrderFlowWithVolatilitySpread() public {
         // Setup spread parameters
         VolatilitySpreadCalculator.SpreadParams memory params = VolatilitySpreadCalculator.SpreadParams({
-            baseSpreadBps: 50,      // 0.5% base spread
+            baseSpreadBps: 50, // 0.5% base spread
             volatilityMultiplier: 200, // 2x multiplier
-            maxSpreadBps: 200,      // 2% max spread
-            volatilityWindow: 0,    // Use 24h volatility
-            useTargetToken: true    // Use makerAsset (WETH) for volatility
+            maxSpreadBps: 200, // 2% max spread
+            volatilityWindow: 0, // Use 24h volatility
+            useTargetToken: true // Use makerAsset (WETH) for volatility
         });
 
         // Preview the spread
@@ -247,9 +241,9 @@ contract IntegrationTest is Test {
             order,
             r,
             vs,
-            1 ether,  // Fill full amount
-            0,        // takerTraits
-            args      // Pass extension as args
+            1 ether, // Fill full amount
+            0, // takerTraits
+            args // Pass extension as args
         );
 
         console.log("\nFill results:");
@@ -270,7 +264,7 @@ contract IntegrationTest is Test {
 
         // Verify the spread increased the taking amount
         assertGt(takingAmount, 3000 * 1e6, "Taking amount should be higher due to spread");
-        
+
         console.log("\nOrder filled successfully with volatility spread!");
     }
 }

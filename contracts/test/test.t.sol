@@ -18,19 +18,19 @@ contract WorkingVolatilitySpreadTest is Test {
     using MakerTraitsLib for MakerTraits;
 
     // ============ INTERFACES ============
-    
+
     // ============ CONSTANTS ============
     uint256 constant MAINNET_FORK_BLOCK = 20_800_000;
-    
+
     address constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
     address constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
-    
+
     // Try a different protocol address or deploy our own mock
     address constant LIMIT_ORDER_PROTOCOL = 0x111111125421cA6dc452d289314280a0f8842A65;
 
     // ============ STATE VARIABLES ============
     VolatilitySpreadCalculator public calculator;
-    
+
     address alice;
     address bob;
     uint256 aliceKey;
@@ -43,10 +43,10 @@ contract WorkingVolatilitySpreadTest is Test {
         // Create test accounts
         aliceKey = 0x1234567890123456789012345678901234567890123456789012345678901234;
         bobKey = 0x2345678901234567890123456789012345678901234567890123456789012345;
-        
+
         alice = vm.addr(aliceKey);
         bob = vm.addr(bobKey);
-        
+
         console.log("Alice:", alice);
         console.log("Bob:", bob);
 
@@ -79,20 +79,16 @@ contract WorkingVolatilitySpreadTest is Test {
     function testVolatilitySpreadCalculation() public {
         // Setup spread parameters
         VolatilitySpreadCalculator.SpreadParams memory params = VolatilitySpreadCalculator.SpreadParams({
-            baseSpreadBps: 50,      // 0.5% base
+            baseSpreadBps: 50, // 0.5% base
             volatilityMultiplier: 200, // 2x multiplier
-            maxSpreadBps: 300,      // 3% max
-            volatilityWindow: 0,    // 24h
-            useTargetToken: true    // Use maker asset (WETH)
+            maxSpreadBps: 300, // 3% max
+            volatilityWindow: 0, // 24h
+            useTargetToken: true // Use maker asset (WETH)
         });
 
         // Preview the spread
         (uint256 volatility, uint256 spread) = calculator.previewSpread(
-            WETH,
-            params.baseSpreadBps,
-            params.volatilityMultiplier,
-            params.maxSpreadBps,
-            params.volatilityWindow
+            WETH, params.baseSpreadBps, params.volatilityMultiplier, params.maxSpreadBps, params.volatilityWindow
         );
 
         console.log("WETH Volatility (bps):", volatility);
@@ -103,11 +99,7 @@ contract WorkingVolatilitySpreadTest is Test {
 
         // Test with USDC (stablecoin)
         (uint256 usdcVol, uint256 usdcSpread) = calculator.previewSpread(
-            USDC,
-            params.baseSpreadBps,
-            params.volatilityMultiplier,
-            params.maxSpreadBps,
-            params.volatilityWindow
+            USDC, params.baseSpreadBps, params.volatilityMultiplier, params.maxSpreadBps, params.volatilityWindow
         );
 
         console.log("USDC Volatility (bps):", usdcVol);
@@ -134,19 +126,15 @@ contract WorkingVolatilitySpreadTest is Test {
         // Calculate expected amounts
         uint256 makingAmount = 1 ether;
         uint256 baseTakingAmount = 3000 * 1e6;
-        
+
         // Get current spread
         (, uint256 spreadBps) = calculator.previewSpread(
-            WETH,
-            params.baseSpreadBps,
-            params.volatilityMultiplier,
-            params.maxSpreadBps,
-            params.volatilityWindow
+            WETH, params.baseSpreadBps, params.volatilityMultiplier, params.maxSpreadBps, params.volatilityWindow
         );
 
         // Calculate taking amount with spread
         uint256 takingAmountWithSpread = baseTakingAmount + (baseTakingAmount * spreadBps / 10000);
-        
+
         console.log("Order Details:");
         console.log("- Making Amount (WETH):", makingAmount);
         console.log("- Base Taking Amount (USDC):", baseTakingAmount);
@@ -185,12 +173,12 @@ contract WorkingVolatilitySpreadTest is Test {
         // Test getTakingAmount
         uint256 takingAmount = calculator.getTakingAmount(
             order,
-            "",           // extension
-            bytes32(0),   // orderHash
-            bob,          // taker
-            1 ether,      // makingAmount
-            1 ether,      // remainingMakingAmount
-            spreadData    // extraData
+            "", // extension
+            bytes32(0), // orderHash
+            bob, // taker
+            1 ether, // makingAmount
+            1 ether, // remainingMakingAmount
+            spreadData // extraData
         );
 
         console.log("Taking amount with spread:", takingAmount);
@@ -199,12 +187,12 @@ contract WorkingVolatilitySpreadTest is Test {
         // Test getMakingAmount
         uint256 makingAmount = calculator.getMakingAmount(
             order,
-            "",           // extension
-            bytes32(0),   // orderHash
-            bob,          // taker
+            "", // extension
+            bytes32(0), // orderHash
+            bob, // taker
             takingAmount, // takingAmount
-            1 ether,      // remainingMakingAmount
-            spreadData    // extraData
+            1 ether, // remainingMakingAmount
+            spreadData // extraData
         );
 
         console.log("Making amount for taking amount:", makingAmount);
