@@ -46,6 +46,8 @@ contract VolatilitySpreadScript is Script {
 
         calculator.addTokenFeeds(tokens, priceFeeds, isStablecoin, volatilityOverrides);
 
+        vm.label(address(calculator),"Voaltility Spread Calculator");
+
         vm.stopBroadcast();
     }
 }
