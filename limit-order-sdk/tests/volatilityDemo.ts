@@ -1,5 +1,5 @@
 import {JsonRpcProvider, Wallet, parseEther, parseUnits, formatEther, formatUnits} from 'ethers';
-import {VolatilitySdk, Address, MakerTraits, VolatilitySpreadExt} from '@1inch/limit-order-sdk';
+import {VolatilitySdk, Address, MakerTraits, VolatilitySpreadExt,randBigInt} from '@1inch/limit-order-sdk';
 
 /**
  * VolatilitySdk Order Creation Demo
@@ -18,6 +18,21 @@ async function volatilitySdkOrderDemo() {
   const provider = new JsonRpcProvider(process.env.RPC_URL)
   const makerWallet = new Wallet(process.env.PRIVATE_KEY!, provider)
   const takerWallet = new Wallet(process.env.TAKER_PRIVATE_KEY || process.env.PRIVATE_KEY!, provider)
+
+  const expiresIn = 120n // 2m
+  const expiration = BigInt(Math.floor(Date.now() / 1000)) + expiresIn
+
+  const UINT_40_MAX = (1n << 40n) - 1n
+
+    console.log("expiration", expiration)
+    console.log("UINT_40_MAX", UINT_40_MAX)
+
+  // see MakerTraits.ts
+  const makerTraits = MakerTraits.default()
+    .withExpiration(expiration)
+    .withNonce(randBigInt(UINT_40_MAX))
+
+    console.log("makerTraits", makerTraits)
 
   const network = await provider.getNetwork();
   const chainId = Number(network.chainId);
@@ -64,7 +79,7 @@ async function volatilitySdkOrderDemo() {
   console.log(`   Max Spread: ${conservativeSpreadParams.maxSpreadBps / 100}%`)
   console.log(`   Window: ${conservativeSpreadParams.volatilityWindow === 0 ? '24h' : conservativeSpreadParams.volatilityWindow === 1 ? '7d' : 'blended'}`)
 
-  try {
+  // try {
     // Create order using SDK
     const conservativeOrder = await volatilitySdk.createOrder(
       {
@@ -76,7 +91,7 @@ async function volatilitySdkOrderDemo() {
       },
       tokens.USDC,                            // Use USDC volatility
       conservativeSpreadParams,
-      MakerTraits.default()
+      makerTraits
     )
 
     console.log(`\n✅ Order created successfully!`)
@@ -117,161 +132,161 @@ async function volatilitySdkOrderDemo() {
     // Store order reference for later use
     const order1 = { order: conservativeOrder, signature }
 
-  } catch (error: any) {
-    console.log(`   ❌ Failed to create order: ${error.message}`)
-  }
+  // } catch (error: any) {
+  //   console.log(`   ❌ Failed to create order: ${error.message}`)
+  // }
 
-  // ============ SCENARIO 2: Aggressive WETH/USDC Order ============
-  console.log(`\n\n📊 SCENARIO 2: Aggressive WETH/USDC Order`)
-  console.log('=' .repeat(40))
+  // // ============ SCENARIO 2: Aggressive WETH/USDC Order ============
+  // console.log(`\n\n📊 SCENARIO 2: Aggressive WETH/USDC Order`)
+  // console.log('=' .repeat(40))
 
-  // Define aggressive spread parameters
-  const aggressiveSpreadParams: VolatilitySpreadExt.SpreadParams = {
-    baseSpreadBps: 100,      // 1% base spread
-    volatilityMultiplier: 500, // 5x volatility multiplier
-    maxSpreadBps: 1000,      // 10% max spread
-    volatilityWindow: 2      // Blended volatility window
-  }
+  // // Define aggressive spread parameters
+  // const aggressiveSpreadParams: VolatilitySpreadExt.SpreadParams = {
+  //   baseSpreadBps: 100,      // 1% base spread
+  //   volatilityMultiplier: 500, // 5x volatility multiplier
+  //   maxSpreadBps: 1000,      // 10% max spread
+  //   volatilityWindow: 2      // Blended volatility window
+  // }
 
-  console.log(`\n🔹 Creating Aggressive Order:`)
-  console.log(`   Base Spread: ${aggressiveSpreadParams.baseSpreadBps / 100}%`)
-  console.log(`   Volatility Multiplier: ${aggressiveSpreadParams.volatilityMultiplier / 100}x`)
-  console.log(`   Max Spread: ${aggressiveSpreadParams.maxSpreadBps / 100}%`)
-  console.log(`   Window: blended`)
+  // console.log(`\n🔹 Creating Aggressive Order:`)
+  // console.log(`   Base Spread: ${aggressiveSpreadParams.baseSpreadBps / 100}%`)
+  // console.log(`   Volatility Multiplier: ${aggressiveSpreadParams.volatilityMultiplier / 100}x`)
+  // console.log(`   Max Spread: ${aggressiveSpreadParams.maxSpreadBps / 100}%`)
+  // console.log(`   Window: blended`)
 
-  try {
-    const aggressiveOrder = await volatilitySdk.createOrder(
-      {
-        maker: new Address(makerWallet.address),
-        makerAsset: tokens.WETH,
-        takerAsset: tokens.USDC,
-        makingAmount: parseEther('0.1'),       // Selling 0.1 ETH
-        takingAmount: parseUnits('300', 6)     // For 300 USDC
-      },
-      tokens.WETH,
-      aggressiveSpreadParams,
-      MakerTraits.default()
-    )
+  // try {
+  //   const aggressiveOrder = await volatilitySdk.createOrder(
+  //     {
+  //       maker: new Address(makerWallet.address),
+  //       makerAsset: tokens.WETH,
+  //       takerAsset: tokens.USDC,
+  //       makingAmount: parseEther('0.1'),       // Selling 0.1 ETH
+  //       takingAmount: parseUnits('300', 6)     // For 300 USDC
+  //     },
+  //     tokens.WETH,
+  //     aggressiveSpreadParams,
+  //     MakerTraits.default()
+  //   )
 
-    console.log(`\n✅ Aggressive order created!`)
-    console.log(`   Order Hash: ${aggressiveOrder.getOrderHash(chainId)}`)
-    console.log(`   Making: ${formatEther(aggressiveOrder.makingAmount)} WETH`)
-    console.log(`   Taking: ${formatUnits(aggressiveOrder.takingAmount, 6)} USDC`)
+  //   console.log(`\n✅ Aggressive order created!`)
+  //   console.log(`   Order Hash: ${aggressiveOrder.getOrderHash(chainId)}`)
+  //   console.log(`   Making: ${formatEther(aggressiveOrder.makingAmount)} WETH`)
+  //   console.log(`   Taking: ${formatUnits(aggressiveOrder.takingAmount, 6)} USDC`)
 
-    // Show order info
-    console.log(`\n📋 Order Details:`)
-    console.log(`   ${aggressiveOrder.getOrderInfo()}`)
-    console.log(`   Target Token: ${aggressiveOrder.getTargetToken().toString().slice(0, 8)}...`)
+  //   // Show order info
+  //   console.log(`\n📋 Order Details:`)
+  //   console.log(`   ${aggressiveOrder.getOrderInfo()}`)
+  //   console.log(`   Target Token: ${aggressiveOrder.getTargetToken().toString().slice(0, 8)}...`)
 
-    // Sign the order
-    const aggressiveOrderTypedData = aggressiveOrder.getTypedData(chainId)
-    const aggressiveSignature = await makerWallet.signTypedData(
-      aggressiveOrderTypedData.domain,
-      aggressiveOrderTypedData.types,
-      aggressiveOrderTypedData.message
-    )
-    console.log(`   ✅ Aggressive order signed`)
+  //   // Sign the order
+  //   const aggressiveOrderTypedData = aggressiveOrder.getTypedData(chainId)
+  //   const aggressiveSignature = await makerWallet.signTypedData(
+  //     aggressiveOrderTypedData.domain,
+  //     aggressiveOrderTypedData.types,
+  //     aggressiveOrderTypedData.message
+  //   )
+  //   console.log(`   ✅ Aggressive order signed`)
 
-    // Store for later use
-    const order2 = { order: aggressiveOrder, signature: aggressiveSignature }
+  //   // Store for later use
+  //   const order2 = { order: aggressiveOrder, signature: aggressiveSignature }
 
-  } catch (error: any) {
-    console.log(`   ❌ Failed to create aggressive order: ${error.message}`)
-  }
+  // } catch (error: any) {
+  //   console.log(`   ❌ Failed to create aggressive order: ${error.message}`)
+  // }
 
-  // ============ SCENARIO 3: Custom Parameters Order ============
-  console.log(`\n\n📊 SCENARIO 3: Custom Parameters Order`)
-  console.log('=' .repeat(40))
+  // // ============ SCENARIO 3: Custom Parameters Order ============
+  // console.log(`\n\n📊 SCENARIO 3: Custom Parameters Order`)
+  // console.log('=' .repeat(40))
 
-  // Custom spread parameters
-  const customSpreadParams: VolatilitySpreadExt.SpreadParams = {
-    baseSpreadBps: 75,       // 0.75% base
-    volatilityMultiplier: 250, // 2.5x multiplier
-    maxSpreadBps: 400,       // 4% max
-    volatilityWindow: 0      // 24h window
-  }
+  // // Custom spread parameters
+  // const customSpreadParams: VolatilitySpreadExt.SpreadParams = {
+  //   baseSpreadBps: 75,       // 0.75% base
+  //   volatilityMultiplier: 250, // 2.5x multiplier
+  //   maxSpreadBps: 400,       // 4% max
+  //   volatilityWindow: 0      // 24h window
+  // }
 
-  console.log(`\n🔹 Creating Custom Order:`)
-  console.log(`   Custom Parameters: ${customSpreadParams.baseSpreadBps / 100}% base, ${customSpreadParams.volatilityMultiplier / 100}x multiplier`)
+  // console.log(`\n🔹 Creating Custom Order:`)
+  // console.log(`   Custom Parameters: ${customSpreadParams.baseSpreadBps / 100}% base, ${customSpreadParams.volatilityMultiplier / 100}x multiplier`)
 
-  try {
-    // Add custom maker traits
-    const customMakerTraits = MakerTraits.default()
-      .withExpiration(BigInt(Math.floor(Date.now() / 1000) + 24 * 60 * 60))
+  // try {
+  //   // Add custom maker traits
+  //   const customMakerTraits = MakerTraits.default()
+  //     .withExpiration(BigInt(Math.floor(Date.now() / 1000) + 24 * 60 * 60))
 
-    const customOrder = await volatilitySdk.createOrder(
-      {
-        maker: new Address(makerWallet.address),
-        makerAsset: tokens.WETH,
-        takerAsset: tokens.USDC,
-        makingAmount: parseEther('0.5'),       // Selling 0.5 ETH
-        takingAmount: parseUnits('1500', 6)    // For 1500 USDC
-      },
-      tokens.WETH,                              // Use ETH volatility this time
-      customSpreadParams,
-      customMakerTraits
-    )
+  //   const customOrder = await volatilitySdk.createOrder(
+  //     {
+  //       maker: new Address(makerWallet.address),
+  //       makerAsset: tokens.WETH,
+  //       takerAsset: tokens.USDC,
+  //       makingAmount: parseEther('0.5'),       // Selling 0.5 ETH
+  //       takingAmount: parseUnits('1500', 6)    // For 1500 USDC
+  //     },
+  //     tokens.WETH,                              // Use ETH volatility this time
+  //     customSpreadParams,
+  //     customMakerTraits
+  //   )
 
-    console.log(`\n✅ Custom order created with expiration!`)
-    console.log(`   Order Hash: ${customOrder.getOrderHash(chainId)}`)
+  //   console.log(`\n✅ Custom order created with expiration!`)
+  //   console.log(`   Order Hash: ${customOrder.getOrderHash(chainId)}`)
 
-    // Check if volatility has changed significantly
-    const hasChanged = await customOrder.hasVolatilityChanged(50) // 0.5% threshold
-    console.log(`   Significant volatility change: ${hasChanged ? 'Yes' : 'No'}`)
+  //   // Check if volatility has changed significantly
+  //   const hasChanged = await customOrder.hasVolatilityChanged(50) // 0.5% threshold
+  //   console.log(`   Significant volatility change: ${hasChanged ? 'Yes' : 'No'}`)
 
-  } catch (error: any) {
-    console.log(`   ❌ Failed to create custom order: ${error.message}`)
-  }
+  // } catch (error: any) {
+  //   console.log(`   ❌ Failed to create custom order: ${error.message}`)
+  // }
 
-  // ============ SCENARIO 4: Order Operations ============
-  console.log(`\n\n📊 SCENARIO 4: Order Operations`)
-  console.log('=' .repeat(40))
+  // // ============ SCENARIO 4: Order Operations ============
+  // console.log(`\n\n📊 SCENARIO 4: Order Operations`)
+  // console.log('=' .repeat(40))
 
-  console.log(`\n🔄 Order Operations Available:`)
-  console.log(`   1. Fill Order:`)
-  console.log(`      await volatilitySdk.fillOrder(order, signature, takerWallet)`)
+  // console.log(`\n🔄 Order Operations Available:`)
+  // console.log(`   1. Fill Order:`)
+  // console.log(`      await volatilitySdk.fillOrder(order, signature, takerWallet)`)
   
-  console.log(`\n   2. Cancel Order:`)
-  console.log(`      await volatilitySdk.cancelOrder(order, makerWallet)`)
+  // console.log(`\n   2. Cancel Order:`)
+  // console.log(`      await volatilitySdk.cancelOrder(order, makerWallet)`)
 
-  console.log(`\n   3. Preview Amounts:`)
-  console.log(`      const adjustedAmount = await order.getTakingAmount()`)
-  console.log(`      const currentSpread = await order.getVolatilitySpread()`)
+  // console.log(`\n   3. Preview Amounts:`)
+  // console.log(`      const adjustedAmount = await order.getTakingAmount()`)
+  // console.log(`      const currentSpread = await order.getVolatilitySpread()`)
 
-  // ============ SCENARIO 5: Multiple Order Creation ============
-  console.log(`\n\n📊 SCENARIO 5: Batch Order Creation`)
-  console.log('=' .repeat(40))
+  // // ============ SCENARIO 5: Multiple Order Creation ============
+  // console.log(`\n\n📊 SCENARIO 5: Batch Order Creation`)
+  // console.log('=' .repeat(40))
 
-  const orderConfigs = [
-    { name: 'Small ETH', making: '0.1', taking: '300', spread: conservativeSpreadParams },
-    { name: 'Medium ETH', making: '0.5', taking: '1500', spread: aggressiveSpreadParams },
-    { name: 'Large ETH', making: '2.0', taking: '6000', spread: customSpreadParams }
-  ]
+  // const orderConfigs = [
+  //   { name: 'Small ETH', making: '0.1', taking: '300', spread: conservativeSpreadParams },
+    // { name: 'Medium ETH', making: '0.5', taking: '1500', spread: aggressiveSpreadParams },
+    // { name: 'Large ETH', making: '2.0', taking: '6000', spread: customSpreadParams }
+  // ]
 
-  console.log(`\n🔹 Creating ${orderConfigs.length} orders in batch:`)
+  // console.log(`\n🔹 Creating ${orderConfigs.length} orders in batch:`)
 
-  const createdOrders = []
-  for (const config of orderConfigs) {
-    try {
-      const order = await volatilitySdk.createOrder(
-        {
-          maker: new Address(makerWallet.address),
-          makerAsset: tokens.WETH,
-          takerAsset: tokens.USDC,
-          makingAmount: parseEther(config.making),
-          takingAmount: parseUnits(config.taking, 6)
-        },
-        tokens.USDC,
-        config.spread
-      )
+  // const createdOrders = []
+  // for (const config of orderConfigs) {
+  //   try {
+  //     const order = await volatilitySdk.createOrder(
+  //       {
+  //         maker: new Address(makerWallet.address),
+  //         makerAsset: tokens.WETH,
+  //         takerAsset: tokens.USDC,
+  //         makingAmount: parseEther(config.making),
+  //         takingAmount: parseUnits(config.taking, 6)
+  //       },
+  //       tokens.USDC,
+  //       config.spread
+  //     )
 
-      createdOrders.push(order)
-      console.log(`   ✅ ${config.name}: ${order.getOrderHash(chainId).slice(0, 10)}...`)
+  //     createdOrders.push(order)
+  //     console.log(`   ✅ ${config.name}: ${order.getOrderHash(chainId).slice(0, 10)}...`)
 
-    } catch (error: any) {
-      console.log(`   ❌ ${config.name}: ${error.message}`)
-    }
-  }
+  //   } catch (error: any) {
+  //     console.log(`   ❌ ${config.name}: ${error.message}`)
+  //   }
+  // }
 }
 
 // Error handling wrapper

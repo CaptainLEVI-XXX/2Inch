@@ -58,15 +58,19 @@ export class VolatilitySpreadExtension {
     // Encode spread parameters for extraData
     const extraData = this.encodeSpreadParams()
 
+    console.log("extraData: ", extraData)
+
     // Build making amount getter following RangeAmountCalculator pattern
     const makingAmountGetter = this.contractAddress.toString() + trim0x(this.cutLastArg(this.cutLastArg(
       this.encodeFunctionCall('getTakingAmount', extraData)
     )))
+    console.log("makingAmountGetter: ", makingAmountGetter)
 
     // Build taking amount getter following RangeAmountCalculator pattern  
     const takingAmountGetter = this.contractAddress.toString() + trim0x(this.cutLastArg(this.cutLastArg(
       this.encodeFunctionCall('getMakingAmount', extraData)
     )))
+    console.log("takingAmountGetter: ", takingAmountGetter)
 
     return new ExtensionBuilder()
       .withMakingAmountData(this.contractAddress, trim0x(this.cutLastArg(this.cutLastArg(

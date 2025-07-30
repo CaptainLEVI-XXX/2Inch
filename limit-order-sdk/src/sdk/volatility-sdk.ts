@@ -33,6 +33,8 @@ export class VolatilitySdk {
         spreadParams: VolatilitySpreadExt.SpreadParams,
         makerTraits = MakerTraits.default()
     ): Promise<LimitOrderWithVolatility> {
+
+        console.log("targetToken: ",  targetToken)
         
         const volatilityExt = VolatilitySpreadExt.VolatilitySpreadExtension.new(
             new Address(this.volatilityContractAddress),
@@ -40,6 +42,7 @@ export class VolatilitySdk {
             spreadParams,
             this.provider
         )
+        console.log("volatilityExt: ", volatilityExt)
 
         return new LimitOrderWithVolatility(orderInfo, makerTraits, volatilityExt)
     }
