@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {console} from "forge-std/console.sol";
 import {FixedPointMathLib} from "@solady/utils/FixedPointMathLib.sol";
 import {IAmountGetter, IOrderMixin} from "./interfaces/IAmountGetter.sol";
 import {CustomRevert} from "./libraries/CustomRevert.sol";
@@ -68,8 +67,6 @@ contract VolatilitySpreadCalculator is IAmountGetter {
 
         // determine which token to use for volatility
         Address targetToken = params.useTargetToken ? order.makerAsset : order.takerAsset;
-
-        console.log("I was here: ");
 
         address targetTokenAddress = targetToken.get();
 
@@ -159,9 +156,7 @@ contract VolatilitySpreadCalculator is IAmountGetter {
         uint8 volatilityWindow
     ) external view returns (uint256 currentVolatility, uint256 dynamicSpread) {
         currentVolatility = _getTokenVolatility(tokenA, volatilityWindow);
-        console.log("current Vailatility: ", currentVolatility);
         dynamicSpread = _calculateDynamicSpread(baseSpreadBps, volatilityMultiplier, maxSpreadBps, currentVolatility);
-        console.log("dynamic spread: ", dynamicSpread);
     }
 
     /**
@@ -219,9 +214,5 @@ contract VolatilitySpreadCalculator is IAmountGetter {
     ) external {
         if (msg.sender != admin) RestrictedOperation.selector.revertWith();
         volatilityStorage.setUpTokenFeeds(tokens, priceFeeds, isStablecoin, volatilityOverrides);
-    }
-
-    function resolveExtension(address, /* taker */ bytes calldata extension) external view returns (bytes memory) {
-        return extension;
     }
 }
