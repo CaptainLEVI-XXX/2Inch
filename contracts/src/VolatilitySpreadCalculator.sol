@@ -200,6 +200,13 @@ contract VolatilitySpreadCalculator is IAmountGetter {
         return volatilityStorage.previewVolatility(token, volatilityWindow);
     }
 
+    /**
+     * @notice Update price history for a token
+     */
+    function updatePriceHistory(address[] calldata token) external {
+        volatilityStorage.updatePriceHistory(token);
+    }
+
     // ============ ADMIN FUNCTIONS ============
 
     /**

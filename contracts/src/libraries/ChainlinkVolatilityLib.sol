@@ -161,30 +161,32 @@ library ChainlinkVolatilityLib {
 
     // ============ PRICE UPDATE FUNCTIONS ============
 
-    function updatePriceHistory(VolatilityStorage storage self, address token) internal {
-        TokenConfig memory config = self.tokenConfigs[token];
-        if (!config.isSupported) revert TokenNotSupported();
+    function updatePriceHistory(VolatilityStorage storage self, address[] calldata token) internal {
+        for (uint256 i = 0; i < token.length; i++) {
+            TokenConfig memory config = self.tokenConfigs[token[i]];
+            if (!config.isSupported) revert TokenNotSupported();
 
-        // Get current price
-        (, int256 price,, uint256 updatedAt,) = config.priceFeed.latestRoundData();
-        if (price <= 0) revert InvalidVolatility();
-        if (block.timestamp - updatedAt > MAX_STALENESS) revert StaleVolatilityData();
+            // Get current price
+            (, int256 price,, uint256 updatedAt,) = config.priceFeed.latestRoundData();
+            if (price <= 0) revert InvalidVolatility();
+            if (block.timestamp - updatedAt > MAX_STALENESS) revert StaleVolatilityData();
 
-        PriceHistory storage history = self.priceHistories[token];
-        uint256 currentPrice = uint256(price);
+            PriceHistory storage history = self.priceHistories[token[i]];
+            uint256 currentPrice = uint256(price);
 
-        // Update hourly data (if an hour has passed)
-        if (block.timestamp >= history.lastHourlyUpdate + 1 hours) {
-            history.hourlyPrices[history.hourlyIndex] = currentPrice;
-            history.hourlyIndex = uint8((history.hourlyIndex + 1) % 24);
-            history.lastHourlyUpdate = block.timestamp;
-        }
+            // Update hourly data (if an hour has passed)
+            if (block.timestamp >= history.lastHourlyUpdate + 1 hours) {
+                history.hourlyPrices[history.hourlyIndex] = currentPrice;
+                history.hourlyIndex = uint8((history.hourlyIndex + 1) % 24);
+                history.lastHourlyUpdate = block.timestamp;
+            }
 
-        // Update daily data (if a day has passed)
-        if (block.timestamp >= history.lastDailyUpdate + 1 days) {
-            history.dailyPrices[history.dailyIndex] = currentPrice;
-            history.dailyIndex = uint8((history.dailyIndex + 1) % 7);
-            history.lastDailyUpdate = block.timestamp;
+            // Update daily data (if a day has passed)
+            if (block.timestamp >= history.lastDailyUpdate + 1 days) {
+                history.dailyPrices[history.dailyIndex] = currentPrice;
+                history.dailyIndex = uint8((history.dailyIndex + 1) % 7);
+                history.lastDailyUpdate = block.timestamp;
+            }
         }
     }
 
