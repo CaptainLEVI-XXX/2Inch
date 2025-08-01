@@ -150,7 +150,7 @@ library ChainlinkVolatilityLib {
         uint256 variance = sumSquaredReturns / validSamples - (meanReturn * meanReturn);
 
         // Return standard deviation (simplified square root)
-        return _sqrt(variance);
+        return variance.sqrt();
     }
 
     function _calculateVolatilityFromPrices(uint256[7] storage prices, uint256 count) private view returns (uint256) {
@@ -198,17 +198,5 @@ library ChainlinkVolatilityLib {
         returns (uint256)
     {
         return getTokenVolatility(self, token, window);
-    }
-
-    // Simplified square root for volatility calculation
-    function _sqrt(uint256 x) private pure returns (uint256) {
-        if (x == 0) return 0;
-        uint256 z = (x + 1) / 2;
-        uint256 y = x;
-        while (z < y) {
-            y = z;
-            z = (x / z + z) / 2;
-        }
-        return y;
     }
 }
