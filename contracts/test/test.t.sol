@@ -76,7 +76,7 @@ contract WorkingVolatilitySpreadTest is Test {
      * @notice Test volatility spread calculation without 1inch integration
      * @dev This demonstrates the core functionality works correctly
      */
-    function testVolatilitySpreadCalculation() public {
+    function testVolatilitySpreadCalculation() public view {
         // Setup spread parameters
         VolatilitySpreadCalculator.SpreadParams memory params = VolatilitySpreadCalculator.SpreadParams({
             baseSpreadBps: 50, // 0.5% base
@@ -146,7 +146,7 @@ contract WorkingVolatilitySpreadTest is Test {
     /**
      * @notice Test the amount getter functions directly
      */
-    function testAmountGetters() public {
+    function testAmountGetters() public view {
         // Create a mock order
         IOrderMixin.Order memory order = IOrderMixin.Order({
             salt: 0,
