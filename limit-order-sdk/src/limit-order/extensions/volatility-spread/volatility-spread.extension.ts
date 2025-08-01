@@ -1,6 +1,5 @@
 // src/limit-order/extensions/volatility-spread/volatility-spread.extension.ts
 import {ethers, Contract, Provider} from 'ethers'
-import {BytesBuilder} from '@1inch/byte-utils'
 import {ExtensionBuilder} from '../extension-builder.js'
 import {Extension} from '../extension.js'
 import {Address} from '../../../address.js'
@@ -78,15 +77,23 @@ export class VolatilitySpreadExtension {
      * @private
      */
     private buildAmountGetterData(): string {
-        // Build the data that will be passed to the contract as extraData
-        const builder = new BytesBuilder()
-            .addUint256(BigInt(this.spreadParams.baseSpreadBps))
-            .addUint256(BigInt(this.spreadParams.volatilityMultiplier))
-            .addUint256(BigInt(this.spreadParams.maxSpreadBps))
-            .addUint8(BigInt(this.spreadParams.volatilityWindow))
-            .addUint8(this.spreadParams.useTargetToken ? 1n : 0n)
-
-        return builder.asHex()
+        // Use ABI encoding to match the Foundry test approach
+        // The contract expects properly ABI encoded SpreadParams struct
+        const abiCoder = ethers.AbiCoder.defaultAbiCoder()
+        
+        // Encode the SpreadParams struct
+        const encodedParams = abiCoder.encode(
+            ['uint256', 'uint256', 'uint256', 'uint8', 'bool'],
+            [
+                this.spreadParams.baseSpreadBps,
+                this.spreadParams.volatilityMultiplier,
+                this.spreadParams.maxSpreadBps,
+                this.spreadParams.volatilityWindow,
+                this.spreadParams.useTargetToken
+            ]
+        )
+    
+        return encodedParams
     }
 
     /**
@@ -109,19 +116,20 @@ export class VolatilitySpreadExtension {
         const encodedData = '0x' + extension.makingAmountData.slice(2 + 40)
         
         // Decode the spread params
-        const abiCoder = ethers.AbiCoder.defaultAbiCoder()
-        const decoded = abiCoder.decode(
-            ['uint256', 'uint256', 'uint256', 'uint8', 'uint8'],
-            encodedData
-        )
+        // Decode the spread params using ABI decoder
+const abiCoder = ethers.AbiCoder.defaultAbiCoder()
+const decoded = abiCoder.decode(
+    ['uint256', 'uint256', 'uint256', 'uint8', 'bool'],
+    encodedData
+)
 
-        const spreadParams: SpreadParams = {
-            baseSpreadBps: Number(decoded[0]),
-            volatilityMultiplier: Number(decoded[1]),
-            maxSpreadBps: Number(decoded[2]),
-            volatilityWindow: Number(decoded[3]) as 0 | 1 | 2,
-            useTargetToken: decoded[4] === 1n
-        }
+const spreadParams: SpreadParams = {
+    baseSpreadBps: Number(decoded[0]),
+    volatilityMultiplier: Number(decoded[1]),
+    maxSpreadBps: Number(decoded[2]),
+    volatilityWindow: Number(decoded[3]) as 0 | 1 | 2,
+    useTargetToken: decoded[4]  // Now properly decoded as boolean
+}
 
         const permit = extension.hasMakerPermit
             ? Interaction.decode(extension.makerPermit)
@@ -306,427 +314,50 @@ export class SpreadParamsBuilder {
 }
 
 // Contract ABI - minimal interface needed
+// Volatility calculator ABI - minimal interface needed
 const VOLATILITY_CALCULATOR_ABI = [
-  {
-      "type": "constructor",
-      "inputs": [
-          {
-              "name": "_admin",
-              "type": "address",
-              "internalType": "address"
-          }
-      ],
-      "stateMutability": "nonpayable"
-  },
-  {
-      "type": "function",
-      "name": "addTokenFeeds",
-      "inputs": [
-          {
-              "name": "tokens",
-              "type": "address[]",
-              "internalType": "address[]"
-          },
-          {
-              "name": "priceFeeds",
-              "type": "address[]",
-              "internalType": "address[]"
-          },
-          {
-              "name": "isStablecoin",
-              "type": "bool[]",
-              "internalType": "bool[]"
-          },
-          {
-              "name": "volatilityOverrides",
-              "type": "uint256[]",
-              "internalType": "uint256[]"
-          }
-      ],
-      "outputs": [],
-      "stateMutability": "nonpayable"
-  },
-  {
-      "type": "function",
-      "name": "admin",
-      "inputs": [],
-      "outputs": [
-          {
-              "name": "",
-              "type": "address",
-              "internalType": "address"
-          }
-      ],
-      "stateMutability": "view"
-  },
-  {
-      "type": "function",
-      "name": "encodeSpreadParams",
-      "inputs": [
-          {
-              "name": "baseSpreadBps",
-              "type": "uint256",
-              "internalType": "uint256"
-          },
-          {
-              "name": "_volatilityMultiplier",
-              "type": "uint256",
-              "internalType": "uint256"
-          },
-          {
-              "name": "maxSpreadBps",
-              "type": "uint256",
-              "internalType": "uint256"
-          },
-          {
-              "name": "volatilityWindow",
-              "type": "uint8",
-              "internalType": "uint8"
-          },
-          {
-              "name": "useTargetToken",
-              "type": "bool",
-              "internalType": "bool"
-          }
-      ],
-      "outputs": [
-          {
-              "name": "",
-              "type": "bytes",
-              "internalType": "bytes"
-          }
-      ],
-      "stateMutability": "pure"
-  },
-  {
-      "type": "function",
-      "name": "getMakingAmount",
-      "inputs": [
-          {
-              "name": "order",
-              "type": "tuple",
-              "internalType": "struct IOrderMixin.Order",
-              "components": [
-                  {
-                      "name": "salt",
-                      "type": "uint256",
-                      "internalType": "uint256"
-                  },
-                  {
-                      "name": "maker",
-                      "type": "uint256",
-                      "internalType": "Address"
-                  },
-                  {
-                      "name": "receiver",
-                      "type": "uint256",
-                      "internalType": "Address"
-                  },
-                  {
-                      "name": "makerAsset",
-                      "type": "uint256",
-                      "internalType": "Address"
-                  },
-                  {
-                      "name": "takerAsset",
-                      "type": "uint256",
-                      "internalType": "Address"
-                  },
-                  {
-                      "name": "makingAmount",
-                      "type": "uint256",
-                      "internalType": "uint256"
-                  },
-                  {
-                      "name": "takingAmount",
-                      "type": "uint256",
-                      "internalType": "uint256"
-                  },
-                  {
-                      "name": "makerTraits",
-                      "type": "uint256",
-                      "internalType": "MakerTraits"
-                  }
-              ]
-          },
-          {
-              "name": "",
-              "type": "bytes",
-              "internalType": "bytes"
-          },
-          {
-              "name": "",
-              "type": "bytes32",
-              "internalType": "bytes32"
-          },
-          {
-              "name": "",
-              "type": "address",
-              "internalType": "address"
-          },
-          {
-              "name": "takingAmount",
-              "type": "uint256",
-              "internalType": "uint256"
-          },
-          {
-              "name": "",
-              "type": "uint256",
-              "internalType": "uint256"
-          },
-          {
-              "name": "extraData",
-              "type": "bytes",
-              "internalType": "bytes"
-          }
-      ],
-      "outputs": [
-          {
-              "name": "makingAmount",
-              "type": "uint256",
-              "internalType": "uint256"
-          }
-      ],
-      "stateMutability": "view"
-  },
-  {
-      "type": "function",
-      "name": "getTakingAmount",
-      "inputs": [
-          {
-              "name": "order",
-              "type": "tuple",
-              "internalType": "struct IOrderMixin.Order",
-              "components": [
-                  {
-                      "name": "salt",
-                      "type": "uint256",
-                      "internalType": "uint256"
-                  },
-                  {
-                      "name": "maker",
-                      "type": "uint256",
-                      "internalType": "Address"
-                  },
-                  {
-                      "name": "receiver",
-                      "type": "uint256",
-                      "internalType": "Address"
-                  },
-                  {
-                      "name": "makerAsset",
-                      "type": "uint256",
-                      "internalType": "Address"
-                  },
-                  {
-                      "name": "takerAsset",
-                      "type": "uint256",
-                      "internalType": "Address"
-                  },
-                  {
-                      "name": "makingAmount",
-                      "type": "uint256",
-                      "internalType": "uint256"
-                  },
-                  {
-                      "name": "takingAmount",
-                      "type": "uint256",
-                      "internalType": "uint256"
-                  },
-                  {
-                      "name": "makerTraits",
-                      "type": "uint256",
-                      "internalType": "MakerTraits"
-                  }
-              ]
-          },
-          {
-              "name": "",
-              "type": "bytes",
-              "internalType": "bytes"
-          },
-          {
-              "name": "",
-              "type": "bytes32",
-              "internalType": "bytes32"
-          },
-          {
-              "name": "",
-              "type": "address",
-              "internalType": "address"
-          },
-          {
-              "name": "makingAmount",
-              "type": "uint256",
-              "internalType": "uint256"
-          },
-          {
-              "name": "",
-              "type": "uint256",
-              "internalType": "uint256"
-          },
-          {
-              "name": "extraData",
-              "type": "bytes",
-              "internalType": "bytes"
-          }
-      ],
-      "outputs": [
-          {
-              "name": "takingAmount",
-              "type": "uint256",
-              "internalType": "uint256"
-          }
-      ],
-      "stateMutability": "view"
-  },
-  {
-      "type": "function",
-      "name": "previewSpread",
-      "inputs": [
-          {
-              "name": "tokenA",
-              "type": "address",
-              "internalType": "address"
-          },
-          {
-              "name": "baseSpreadBps",
-              "type": "uint256",
-              "internalType": "uint256"
-          },
-          {
-              "name": "volatilityMultiplier",
-              "type": "uint256",
-              "internalType": "uint256"
-          },
-          {
-              "name": "maxSpreadBps",
-              "type": "uint256",
-              "internalType": "uint256"
-          },
-          {
-              "name": "volatilityWindow",
-              "type": "uint8",
-              "internalType": "uint8"
-          }
-      ],
-      "outputs": [
-          {
-              "name": "currentVolatility",
-              "type": "uint256",
-              "internalType": "uint256"
-          },
-          {
-              "name": "dynamicSpread",
-              "type": "uint256",
-              "internalType": "uint256"
-          }
-      ],
-      "stateMutability": "view"
-  },
-  {
-      "type": "function",
-      "name": "previewVolatility",
-      "inputs": [
-          {
-              "name": "token",
-              "type": "address",
-              "internalType": "address"
-          },
-          {
-              "name": "volatilityWindow",
-              "type": "uint8",
-              "internalType": "uint8"
-          }
-      ],
-      "outputs": [
-          {
-              "name": "currentVolatility",
-              "type": "uint256",
-              "internalType": "uint256"
-          }
-      ],
-      "stateMutability": "view"
-  },
-  {
-      "type": "function",
-      "name": "resolveExtension",
-      "inputs": [
-          {
-              "name": "",
-              "type": "address",
-              "internalType": "address"
-          },
-          {
-              "name": "extension",
-              "type": "bytes",
-              "internalType": "bytes"
-          }
-      ],
-      "outputs": [
-          {
-              "name": "",
-              "type": "bytes",
-              "internalType": "bytes"
-          }
-      ],
-      "stateMutability": "view"
-  },
-  {
-      "type": "event",
-      "name": "SpreadCalculated",
-      "inputs": [
-          {
-              "name": "orderHash",
-              "type": "bytes32",
-              "indexed": true,
-              "internalType": "bytes32"
-          },
-          {
-              "name": "token",
-              "type": "address",
-              "indexed": true,
-              "internalType": "address"
-          },
-          {
-              "name": "volatility",
-              "type": "uint256",
-              "indexed": false,
-              "internalType": "uint256"
-          },
-          {
-              "name": "dynamicSpread",
-              "type": "uint256",
-              "indexed": false,
-              "internalType": "uint256"
-          },
-          {
-              "name": "adjustedAmount",
-              "type": "uint256",
-              "indexed": false,
-              "internalType": "uint256"
-          }
-      ],
-      "anonymous": false
-  },
-  {
-      "type": "error",
-      "name": "InvalidParam",
-      "inputs": []
-  },
-  {
-      "type": "error",
-      "name": "RestrictedOperation",
-      "inputs": []
-  },
-  {
-      "type": "error",
-      "name": "SpreadTooHigh",
-      "inputs": []
-  },
-  {
-      "type": "error",
-      "name": "TokenNotSupported",
-      "inputs": []
-  }
-]
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "tokenA",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "baseSpreadBps",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "volatilityMultiplier",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "maxSpreadBps",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint8",
+                "name": "volatilityWindow",
+                "type": "uint8"
+            }
+        ],
+        "name": "previewSpread",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "currentVolatility",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "dynamicSpread",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    }
+];
