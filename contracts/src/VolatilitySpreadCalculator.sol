@@ -14,13 +14,13 @@ contract VolatilitySpreadCalculator is IAmountGetter {
     using AddressLib for Address;
 
     // ============ STORAGE ============
-    ChainlinkVolatilityLib.VolatilityStorage internal volatilityStorage;
+    ChainlinkVolatilityLib.VolatilityStorage internal _volatilityStorage;
 
     address public admin;
 
-    // constants
-    uint256 private constant BASIS_POINTS = 10000;
-    uint256 private constant MAX_SPREAD = 1000;
+    // ============ CONSTANTS ============
+    uint256 public constant BASIS_POINTS = 10000;
+    uint256 public constant MAX_SPREAD = 1000;
 
     // ============ EVENTS ============
 
@@ -32,11 +32,13 @@ contract VolatilitySpreadCalculator is IAmountGetter {
         uint256 adjustedAmount
     );
 
+    // ============ ERRORS ============
+
     error SpreadTooHigh();
     error InvalidParam();
     error RestrictedOperation();
 
-    // Struct
+    // ============ STRUCTS ============
     struct SpreadParams {
         uint256 baseSpreadBps; // Base spread (e.g., 50 = 0.5%)
         uint256 volatilityMultiplier; // How volatility affects spread (e.g., 200 = 2x)
@@ -45,6 +47,7 @@ contract VolatilitySpreadCalculator is IAmountGetter {
         bool useTargetToken; // true=use makerAsset, false=use takerAsset for volatility
     }
 
+    // ============ CONSTRUCTOR ============
     constructor(address _admin) {
         admin = _admin;
     }
@@ -52,7 +55,6 @@ contract VolatilitySpreadCalculator is IAmountGetter {
     // ============ MAIN FUNCTIONS ============
     /**
      * @notice Calculate taking amount with dynamic spread
-     * @dev Token info comes from order.makerAsset and order.takerAsset!
      */
     function getTakingAmount(
         IOrderMixin.Order calldata order,
@@ -68,10 +70,8 @@ contract VolatilitySpreadCalculator is IAmountGetter {
         // determine which token to use for volatility
         Address targetToken = params.useTargetToken ? order.makerAsset : order.takerAsset;
 
-        address targetTokenAddress = targetToken.get();
-
         // Get Valatility for the target token
-        uint256 currentVolatility = _getTokenVolatility(targetTokenAddress, params.volatilityWindow);
+        uint256 currentVolatility = _getTokenVolatility(targetToken.get(), params.volatilityWindow);
 
         // calculate Dynamic Spread
         uint256 dynamicSpread = _calculateDynamicSpread(
@@ -81,8 +81,6 @@ contract VolatilitySpreadCalculator is IAmountGetter {
         // Apply spread to taking Amount
         uint256 originalTakingAmount = makingAmount.mulDiv(order.takingAmount, order.makingAmount);
         takingAmount = originalTakingAmount.rawAdd(originalTakingAmount.mulDiv(dynamicSpread, BASIS_POINTS));
-
-        // emit SpreadCalculated(orderHash,targetToken,currentVolatility,dynamicSpread,takingAmount);
     }
 
     /**
@@ -98,15 +96,12 @@ contract VolatilitySpreadCalculator is IAmountGetter {
         bytes calldata extraData
     ) external view returns (uint256 makingAmount) {
         SpreadParams memory params = _decodeExtraData(extraData);
-        // SpreadParams memory params = abi.decode(extraData, (SpreadParams));
 
         // Determine ehich Token to use for volatality calculation
         Address targetToken = params.useTargetToken ? order.makerAsset : order.takerAsset;
 
-        address targetTokenAddress = targetToken.get();
-
         // Get volatility for the target token
-        uint256 currentVolatility = _getTokenVolatility(targetTokenAddress, params.volatilityWindow);
+        uint256 currentVolatility = _getTokenVolatility(targetToken.get(), params.volatilityWindow);
 
         // Calculate dynamic spread
         uint256 dynamicSpread = _calculateDynamicSpread(
@@ -116,8 +111,6 @@ contract VolatilitySpreadCalculator is IAmountGetter {
         // Apply spread to making amount
         uint256 originalMakingAmount = takingAmount.mulDiv(order.makingAmount, order.takingAmount);
         makingAmount = originalMakingAmount.rawSub(originalMakingAmount.mulDiv(dynamicSpread, BASIS_POINTS));
-
-        // emit SpreadCalculated(orderHash, targetToken, currentVolatility, dynamicSpread, makingAmount);
     }
     /**
      * @dev Calculate dynamic spread based on volatility
@@ -185,8 +178,11 @@ contract VolatilitySpreadCalculator is IAmountGetter {
         );
     }
 
+    /**
+     * @notice Get volatility for a token
+     */
     function _getTokenVolatility(address token, uint8 window) internal view returns (uint256) {
-        return volatilityStorage.getTokenVolatility(token, window);
+        return _volatilityStorage.getTokenVolatility(token, window);
     }
 
     /**
@@ -197,21 +193,20 @@ contract VolatilitySpreadCalculator is IAmountGetter {
         view
         returns (uint256 currentVolatility)
     {
-        return volatilityStorage.previewVolatility(token, volatilityWindow);
-    }
+        return _volatilityStorage.previewVolatility(token, volatilityWindow);
+    }   
 
     /**
      * @notice Update price history for a token
      */
     function updatePriceHistory(address[] calldata token) external {
-        volatilityStorage.updatePriceHistory(token);
+        _volatilityStorage.updatePriceHistory(token);
     }
 
     // ============ ADMIN FUNCTIONS ============
 
     /**
      * @notice Add multiple tokens with their feeds in batch
-     * @dev In production: add onlyOwner modifier
      */
     function addTokenFeeds(
         address[] calldata tokens,
@@ -220,6 +215,6 @@ contract VolatilitySpreadCalculator is IAmountGetter {
         uint256[] calldata volatilityOverrides
     ) external {
         if (msg.sender != admin) RestrictedOperation.selector.revertWith();
-        volatilityStorage.setUpTokenFeeds(tokens, priceFeeds, isStablecoin, volatilityOverrides);
+        _volatilityStorage.setUpTokenFeeds(tokens, priceFeeds, isStablecoin, volatilityOverrides);
     }
 }

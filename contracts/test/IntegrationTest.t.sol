@@ -37,19 +37,19 @@ contract IntegrationTest is Test {
     using MakerTraitsLib for MakerTraits;
 
     // ============ CONSTANTS ============
-    uint256 constant MAINNET_FORK_BLOCK = 23020785;
+    uint256 public constant MAINNET_FORK_BLOCK = 23020785;
 
     // Mainnet tokens
-    address constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
-    address constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
-    address constant DAI = 0x6B175474E89094C44Da98b954EedeAC495271d0F;
+    address public constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+    address public constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
+    address public constant DAI = 0x6B175474E89094C44Da98b954EedeAC495271d0F;
 
     // 1inch Limit Order Protocol V4 Mainnet address
-    ILimitOrderProtocol constant LIMIT_ORDER_PROTOCOL = ILimitOrderProtocol(0x111111125421cA6dc452d289314280a0f8842A65);
+    ILimitOrderProtocol public constant LIMIT_ORDER_PROTOCOL = ILimitOrderProtocol(0x111111125421cA6dc452d289314280a0f8842A65);
 
     // Chainlink Price Feeds (for your setup)
-    address constant ETH_USD_FEED = 0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419;
-    address constant USDC_USD_FEED = 0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6;
+    address public constant ETH_USD_FEED = 0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419;
+    address public constant USDC_USD_FEED = 0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6;
 
     // 1inch Protocol Flags
     uint256 private constant _HAS_EXTENSION_FLAG = 1 << 249;
@@ -59,17 +59,17 @@ contract IntegrationTest is Test {
     VolatilitySpreadCalculator public calculator;
 
     // Test accounts private keys
-    uint256 alicePrivateKey = 0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d;
-    uint256 bobPrivateKey = 0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a;
+    uint256 _alicePrivateKey = 0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d;
+    uint256 _bobPrivateKey = 0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a;
 
-    address alice;
-    address bob;
+    address public alice;
+    address public bob;
 
     function setUp() public {
         vm.createSelectFork(vm.envString("ETH_RPC_URL"), MAINNET_FORK_BLOCK);
 
-        alice = vm.addr(alicePrivateKey);
-        bob = vm.addr(bobPrivateKey);
+        alice = vm.addr(_alicePrivateKey);
+        bob = vm.addr(_bobPrivateKey);
 
         console.log("Alice address:", alice);
         console.log("Bob address:", bob);
@@ -121,7 +121,7 @@ contract IntegrationTest is Test {
         calculator.addTokenFeeds(tokens, priceFeeds, isStablecoin, volatilityOverrides);
     }
 
-    function buildOrderWithVolatilitySpread(
+    function _buildOrderWithVolatilitySpread(
         address maker,
         address makerAsset,
         address takerAsset,
@@ -179,7 +179,7 @@ contract IntegrationTest is Test {
         takerTraits = makerAmountFlag | extensionLengthBits;
     }
 
-    function signOrder(ILimitOrderProtocol.Order memory order, uint256 privateKey)
+    function _signOrder(ILimitOrderProtocol.Order memory order, uint256 privateKey)
         internal
         view
         returns (bytes32 r, bytes32 vs)
@@ -202,9 +202,9 @@ contract IntegrationTest is Test {
         });
 
         (ILimitOrderProtocol.Order memory order, bytes memory extension, uint256 takerTraits) =
-            buildOrderWithVolatilitySpread(alice, WETH, USDC, 1 ether, 3000 * 1e6, params);
+            _buildOrderWithVolatilitySpread(alice, WETH, USDC, 1 ether, 3000 * 1e6, params);
 
-        (bytes32 r, bytes32 vs) = signOrder(order, alicePrivateKey);
+        (bytes32 r, bytes32 vs) = _signOrder(order, _alicePrivateKey);
 
         // Verify extension hash
         uint256 expectedHash = uint256(keccak256(extension)) & ((1 << 160) - 1);

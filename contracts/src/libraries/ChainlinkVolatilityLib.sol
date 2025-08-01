@@ -7,11 +7,12 @@ import {FixedPointMathLib} from "@solady/utils/FixedPointMathLib.sol";
 library ChainlinkVolatilityLib {
     using FixedPointMathLib for uint256;
 
-    // Structs
+    //===========Structs: Volatility Storage===========
     struct VolatilityStorage {
         mapping(address => TokenConfig) tokenConfigs;
         mapping(address => PriceHistory) priceHistories;
     }
+    //===========Structs: Token Config===========
 
     struct TokenConfig {
         IAggregatorV3Interface priceFeed;
@@ -19,6 +20,7 @@ library ChainlinkVolatilityLib {
         bool isStablecoin;
         bool isSupported;
     }
+    //===========Structs: Price History===========
 
     struct PriceHistory {
         uint256[24] hourlyPrices; // 24 hours of data
@@ -29,19 +31,21 @@ library ChainlinkVolatilityLib {
         uint8 dailyIndex;
     }
 
-    // Constants
+    //===========Constants===========
     uint256 public constant STABLECOIN_VOLATILITY = 100; // 1%
     uint256 public constant DEFAULT_VOLATILITY = 3000; // 30%
     uint256 public constant MAX_STALENESS = 3600; // 1 hour
     uint256 private constant VOLATILITY_SCALE = 10000; // Basis points
 
-    // Errors
+    //===========Errors===========
     error TokenNotSupported();
     error InvalidVolatility();
     error StaleVolatilityData();
 
-    // ============ SETUP FUNCTIONS ============
-
+    //===========Functions: Setup===========
+    /**
+     * @dev Add multiple tokens with their feeds in batch
+     */
     function setUpTokenFeeds(
         VolatilityStorage storage self,
         address[] calldata tokens,
@@ -59,8 +63,9 @@ library ChainlinkVolatilityLib {
         }
     }
 
-    // ============ CORE FUNCTIONS ============
-
+    /**
+     * @dev Get volatility for a token
+     */
     function getTokenVolatility(VolatilityStorage storage self, address token, uint8 window)
         internal
         view
@@ -93,7 +98,9 @@ library ChainlinkVolatilityLib {
     }
 
     // ============ VOLATILITY CALCULATION ============
-
+    /**
+     * @dev Calculate 24 hour volatility for a token
+     */
     function _calculate24hVolatility(VolatilityStorage storage self, address token) private view returns (uint256) {
         PriceHistory storage history = self.priceHistories[token];
 
@@ -106,6 +113,9 @@ library ChainlinkVolatilityLib {
         return _calculateVolatilityFromPrices(history.hourlyPrices, 24);
     }
 
+    /**
+     * @dev Calculate 7 day volatility for a token
+     */
     function _calculate7dVolatility(VolatilityStorage storage self, address token) private view returns (uint256) {
         PriceHistory storage history = self.priceHistories[token];
 
@@ -160,7 +170,9 @@ library ChainlinkVolatilityLib {
     }
 
     // ============ PRICE UPDATE FUNCTIONS ============
-
+    /**
+     * @dev Update price history for a token
+     */
     function updatePriceHistory(VolatilityStorage storage self, address[] calldata token) internal {
         for (uint256 i = 0; i < token.length; i++) {
             TokenConfig memory config = self.tokenConfigs[token[i]];
@@ -191,7 +203,9 @@ library ChainlinkVolatilityLib {
     }
 
     // ============ UTILITY FUNCTIONS ============
-
+    /**
+     * @dev Preview volatility for a token
+     */
     function previewVolatility(VolatilityStorage storage self, address token, uint8 window)
         internal
         view
