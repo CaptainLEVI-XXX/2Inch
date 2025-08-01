@@ -1,303 +1,732 @@
 // src/limit-order/extensions/volatility-spread/volatility-spread.extension.ts
-import {ethers, Contract, Provider, Wallet} from 'ethers'
-import {trim0x} from '@1inch/byte-utils'
-import assert from 'assert'
+import {ethers, Contract, Provider} from 'ethers'
+import {BytesBuilder} from '@1inch/byte-utils'
 import {ExtensionBuilder} from '../extension-builder.js'
 import {Extension} from '../extension.js'
 import {Address} from '../../../address.js'
+import {Interaction} from '../../interaction.js'
 
 /**
  * @title VolatilitySpreadExtension
- * @notice Extension for volatility-based dynamic spreads following 1inch SDK patterns
- * 
- * This extension follows the same pattern as FeeTakerExtension and RangeAmountCalculator:
- * - Uses IAmountGetter interface on contract side
- * - Builds extension with contract address + encoded function call
- * - Handles order creation, signing, and filling
+ * @notice Extension for volatility-based dynamic spreads following FeeTakerExtension pattern
  */
 export class VolatilitySpreadExtension {
-  private constructor(
-    public readonly contractAddress: Address,
-    public readonly targetToken: Address,
-    public readonly spreadParams: SpreadParams,
-    public readonly contract?: Contract
-  ) {}
+    private constructor(
+        public readonly address: Address,
+        public readonly spreadParams: SpreadParams,
+        public readonly contract?: Contract,
+        public readonly makerPermit?: Interaction
+    ) {}
 
-  /**
-   * Create new VolatilitySpreadExtension
-   * 
-   * @param contractAddress Address of deployed VolatilitySpreadCalculator
-   * @param targetToken Token address to use for volatility calculation
-   * @param spreadParams Volatility spread configuration
-   * @param provider Optional provider for contract calls
-   */
-  static new(
-    contractAddress: Address,
-    targetToken: Address,
-    spreadParams: SpreadParams,
-    provider?: Provider
-  ): VolatilitySpreadExtension {
-    let contract: Contract | undefined
+    /**
+     * Create new VolatilitySpreadExtension
+     * Following the pattern from FeeTakerExtension.new()
+     */
+    static new(
+        address: Address,
+        spreadParams: SpreadParams,
+        extra?: {
+            makerPermit?: Interaction
+            provider?: Provider
+        }
+    ): VolatilitySpreadExtension {
+        let contract: Contract | undefined
 
-    if (provider) {
-      contract = new Contract(
-        contractAddress.toString(),
-        VOLATILITY_CALCULATOR_ABI,
-        provider
-      )
+        if (extra?.provider) {
+            contract = new Contract(
+                address.toString(),
+                VOLATILITY_CALCULATOR_ABI,
+                extra.provider
+            )
+        }
+
+        return new VolatilitySpreadExtension(
+            address,
+            spreadParams,
+            contract,
+            extra?.makerPermit
+        )
     }
 
-    return new VolatilitySpreadExtension(contractAddress, targetToken, spreadParams, contract)
-  }
+    /**
+     * Build Extension object for use in limit orders
+     * Following the exact pattern from FeeTakerExtension.build()
+     */
+    build(): Extension {
+        const amountGetterData = this.buildAmountGetterData()
 
-  /**
-   * Build Extension object for use in orders
-   * Follows RangeAmountCalculator pattern: contractAddress + encodedFunctionCall(withCutArgs)
-   */
-  build(): Extension {
-    // Encode spread parameters for extraData
-    const extraData = this.encodeSpreadParams()
+        const builder = new ExtensionBuilder()
+            .withMakingAmountData(this.address, amountGetterData)
+            .withTakingAmountData(this.address, amountGetterData)
 
-    console.log("extraData: ", extraData)
+        if (this.makerPermit) {
+            builder.withMakerPermit(
+                this.makerPermit.target,
+                this.makerPermit.data
+            )
+        }
 
-    // Build making amount getter following RangeAmountCalculator pattern
-    const makingAmountGetter = this.contractAddress.toString() + trim0x(this.cutLastArg(this.cutLastArg(
-      this.encodeFunctionCall('getTakingAmount', extraData)
-    )))
-    console.log("makingAmountGetter: ", makingAmountGetter)
-
-    // Build taking amount getter following RangeAmountCalculator pattern  
-    const takingAmountGetter = this.contractAddress.toString() + trim0x(this.cutLastArg(this.cutLastArg(
-      this.encodeFunctionCall('getMakingAmount', extraData)
-    )))
-    console.log("takingAmountGetter: ", takingAmountGetter)
-
-    return new ExtensionBuilder()
-      .withMakingAmountData(this.contractAddress, trim0x(this.cutLastArg(this.cutLastArg(
-        this.encodeFunctionCall('getTakingAmount', extraData)
-      ))))
-      .withTakingAmountData(this.contractAddress, trim0x(this.cutLastArg(this.cutLastArg(
-        this.encodeFunctionCall('getMakingAmount', extraData)
-      ))))
-      .build()
-  }
-
-  /**
-   * Preview volatility and dynamic spread
-   * Requires provider to be set during construction
-   */
-  async previewVolatilitySpread(): Promise<VolatilityPreview> {
-    if (!this.contract) {
-      throw new Error('Provider not available - pass provider during construction')
+        return builder.build()
     }
 
-    try {
-      const result = await this.contract.previewSpread(
-        this.targetToken.toString(),
-        this.spreadParams.baseSpreadBps,
-        this.spreadParams.volatilityMultiplier,
-        this.spreadParams.maxSpreadBps,
-        this.spreadParams.volatilityWindow
-      )
+    /**
+     * Build data for VolatilitySpreadCalculator amount getter
+     * This follows the same pattern as FeeTakerExtension.buildAmountGetterData()
+     * 
+     * The data will be passed as the last parameter (extraData) to getTakingAmount/getMakingAmount
+     * 
+     * @private
+     */
+    private buildAmountGetterData(): string {
+        // Build the data that will be passed to the contract as extraData
+        const builder = new BytesBuilder()
+            .addUint256(BigInt(this.spreadParams.baseSpreadBps))
+            .addUint256(BigInt(this.spreadParams.volatilityMultiplier))
+            .addUint256(BigInt(this.spreadParams.maxSpreadBps))
+            .addUint8(BigInt(this.spreadParams.volatilityWindow))
+            .addUint8(this.spreadParams.useTargetToken ? 1n : 0n)
 
-      return {
-        currentVolatility: result[0],
-        dynamicSpread: result[1],
-        targetToken: this.targetToken.toString(),
-        spreadParams: this.spreadParams
-      }
-    } catch (error: any) {
-      throw new Error(`Failed to preview volatility: ${error.message}`)
-    }
-  }
-
-  /**
-   * Calculate adjusted taking amount with volatility spread applied
-   */
-  async calculateAdjustedTakingAmount(originalTakingAmount: string): Promise<string> {
-    const preview = await this.previewVolatilitySpread()
-    const original = ethers.getBigInt(originalTakingAmount)
-    const spreadBps = ethers.getBigInt(preview.dynamicSpread.toString())
-    
-    // Apply spread: takingAmount = original + (original * spread / 10000)
-    const spreadAmount = (original * spreadBps) / 10000n
-    return (original + spreadAmount).toString()
-  }
-
-  /**
-   * Calculate adjusted making amount with volatility spread applied
-   */
-  async calculateAdjustedMakingAmount(originalMakingAmount: string): Promise<string> {
-    const preview = await this.previewVolatilitySpread()
-    const original = ethers.getBigInt(originalMakingAmount)
-    const spreadBps = ethers.getBigInt(preview.dynamicSpread.toString())
-    
-    // Apply spread: makingAmount = original - (original * spread / 10000)
-    const spreadAmount = (original * spreadBps) / 10000n
-    return (original - spreadAmount).toString()
-  }
-
-  /**
-   * Get human-readable extension information
-   */
-  getInfo(): string {
-    return `VolatilitySpreadExtension(${this.contractAddress.toString().slice(0, 8)}...) ` +
-           `Target: ${this.targetToken.toString().slice(0, 8)}... ` +
-           `Base: ${this.spreadParams.baseSpreadBps / 100}% ` +
-           `Multiplier: ${this.spreadParams.volatilityMultiplier / 100}x ` +
-           `Max: ${this.spreadParams.maxSpreadBps / 100}%`
-  }
-
-  /**
-   * Encode spread parameters for extraData (what goes to contract)
-   */
-  private encodeSpreadParams(): string {
-    const abiCoder = ethers.AbiCoder.defaultAbiCoder()
-    return abiCoder.encode(
-      ['tuple(address,uint256,uint256,uint256,uint8)'],
-      [[
-        this.targetToken.toString(),
-        this.spreadParams.baseSpreadBps,
-        this.spreadParams.volatilityMultiplier,
-        this.spreadParams.maxSpreadBps,
-        this.spreadParams.volatilityWindow
-      ]]
-    )
-  }
-
-  /**
-   * Encode function call for extension building
-   * This mimics what RangeAmountCalculator does
-   */
-  private encodeFunctionCall(functionName: string, extraData: string): string {
-    // Create dummy parameters that will be cut off
-    const dummyOrder = {
-      salt: '0',
-      maker: ethers.ZeroAddress,
-      receiver: ethers.ZeroAddress,
-      makerAsset: ethers.ZeroAddress,
-      takerAsset: ethers.ZeroAddress,
-      makingAmount: '0',
-      takingAmount: '0',
-      makerTraits: '0'
+        return builder.asHex()
     }
 
-    const iface = new ethers.Interface(VOLATILITY_CALCULATOR_ABI)
-    
-    return iface.encodeFunctionData(functionName, [
-      dummyOrder,           // order (will be cut)
-      '0x',                 // extension (will be cut) 
-      ethers.ZeroHash,      // orderHash
-      ethers.ZeroAddress,   // taker
-      '0',                  // amount
-      '0',                  // remainingAmount (will be cut)
-      extraData             // extraData (our spread params)
-    ])
-  }
+    /**
+     * Create from existing Extension (for deserialization)
+     * Following FeeTakerExtension.fromExtension() pattern
+     */
+    static fromExtension(extension: Extension, expectedContract: Address): VolatilitySpreadExtension {
+        const extensionAddress = Address.fromFirstBytes(extension.makingAmountData)
+        
+        if (!extensionAddress.equal(expectedContract)) {
+            throw new Error('Extension contract address does not match expected address')
+        }
 
-  /**
-   * Cut last argument from encoded function call (replaces cutLastArg from byte-utils)
-   */
-  private cutLastArg(data: string): string {
-    if (!data.startsWith('0x')) {
-      data = '0x' + data
+        if (extension.takingAmountData !== extension.makingAmountData) {
+            throw new Error('Invalid extension, taking amount data must equal making amount data')
+        }
+
+        // Extract encoded params from makingAmountData
+        // Skip first 20 bytes (address)
+        const encodedData = '0x' + extension.makingAmountData.slice(2 + 40)
+        
+        // Decode the spread params
+        const abiCoder = ethers.AbiCoder.defaultAbiCoder()
+        const decoded = abiCoder.decode(
+            ['uint256', 'uint256', 'uint256', 'uint8', 'uint8'],
+            encodedData
+        )
+
+        const spreadParams: SpreadParams = {
+            baseSpreadBps: Number(decoded[0]),
+            volatilityMultiplier: Number(decoded[1]),
+            maxSpreadBps: Number(decoded[2]),
+            volatilityWindow: Number(decoded[3]) as 0 | 1 | 2,
+            useTargetToken: decoded[4] === 1n
+        }
+
+        const permit = extension.hasMakerPermit
+            ? Interaction.decode(extension.makerPermit)
+            : undefined
+
+        return new VolatilitySpreadExtension(
+            extensionAddress,
+            spreadParams,
+            undefined, // contract not available in deserialization
+            permit
+        )
     }
+
+    // /**
+    //  * Preview volatility and dynamic spread
+    //  * Requires provider to be set during construction
+    //  */
+    // async previewVolatilitySpread(makerAsset: Address, takerAsset: Address): Promise<VolatilityPreview> {
+    //     if (!this.contract) {
+    //         throw new Error('Provider not available - pass provider during construction')
+    //     }
+
+    //     // try {
+    //         // Determine target token based on useTargetToken flag
+    //         const targetToken = this.spreadParams.useTargetToken ? makerAsset : takerAsset
+
+    //         console.log('targetToken', targetToken)
+            
+    //         const result = await this.contract.previewSpread(
+    //             targetToken.toString(),
+    //             this.spreadParams.baseSpreadBps,
+    //             this.spreadParams.volatilityMultiplier,
+    //             this.spreadParams.maxSpreadBps,
+    //             this.spreadParams.volatilityWindow
+    //         )
+    //         console.log('result', result)
+
+    //         return {
+    //             currentVolatility: BigInt(result[0]),
+    //             dynamicSpread: BigInt(result[1]),
+    //             targetToken: targetToken.toString(),
+    //             spreadParams: this.spreadParams
+    //         }
+    //     // } catch (error: any) {
+
+    //     //     console.error()
+    //     //     throw new Error(`Failed to preview volatility: ${error.message}`)
+    //     // }
+    // }
+
+    async previewVolatilitySpread(makerAsset: Address, takerAsset: Address): Promise<VolatilityPreview> {
+        if (!this.contract) {
+            throw new Error('Provider not available - pass provider during construction')
+        }
     
-    // Remove the last 32 bytes (64 hex characters) which represents the last argument
-    if (data.length < 66) { // 0x + at least 64 chars
-      return data
+        try {
+            // Determine target token based on useTargetToken flag
+            const targetToken = this.spreadParams.useTargetToken ? makerAsset : takerAsset;
+            
+            console.log('Calling previewSpread with params:', {
+                tokenA: targetToken.toString(),
+                baseSpreadBps: this.spreadParams.baseSpreadBps,
+                volatilityMultiplier: this.spreadParams.volatilityMultiplier,
+                maxSpreadBps: this.spreadParams.maxSpreadBps,
+                volatilityWindow: this.spreadParams.volatilityWindow
+            });
+    
+            // Explicitly call the contract with named parameters
+            const result = await this.contract.previewSpread.staticCall(
+                targetToken.toString(),
+                this.spreadParams.baseSpreadBps,
+                this.spreadParams.volatilityMultiplier,
+                this.spreadParams.maxSpreadBps,
+                this.spreadParams.volatilityWindow
+            );
+    
+            console.log('Raw result from contract:', result);
+    
+            // Ensure we have both return values
+            if (!result || result.length < 2) {
+                throw new Error('Invalid return value from previewSpread');
+            }
+    
+            return {
+                currentVolatility: BigInt(result[0].toString()),
+                dynamicSpread: BigInt(result[1].toString()),
+                targetToken: targetToken.toString(),
+                spreadParams: this.spreadParams
+            };
+        } catch (error: any) {
+            console.error('Error in previewVolatilitySpread:', {
+                error: error.message,
+                stack: error.stack,
+                code: error.code,
+                reason: error.reason,
+                data: error.data
+            });
+            throw new Error(`Failed to preview volatility: ${error.message}`);
+        }
     }
-    
-    return data.slice(0, -64)
-  }
 
-  /**
-   * Decode extension from bytes (for validation/testing)
-   */
-  static fromExtension(extension: Extension, expectedContract: Address): VolatilitySpreadExtension {
-    // Extract contract address from making amount data
-    const contractAddress = Address.fromFirstBytes(extension.makingAmountData)
-    
-    assert(
-      contractAddress.equal(expectedContract),
-      'Extension contract address does not match expected address'
-    )
-
-    // This is a simplified decoder - in practice you'd extract the spread params
-    // from the encoded function call data
-    throw new Error('Extension decoding not implemented - use for creation only')
-  }
+    /**
+     * Get human-readable extension information
+     */
+    getInfo(): string {
+        const target = this.spreadParams.useTargetToken ? 'maker' : 'taker'
+        return `VolatilitySpread(${this.address.toString().slice(0, 8)}...) ` +
+               `Base: ${this.spreadParams.baseSpreadBps / 100}% ` +
+               `Multiplier: ${this.spreadParams.volatilityMultiplier / 100}x ` +
+               `Max: ${this.spreadParams.maxSpreadBps / 100}% ` +
+               `Window: ${['24h', '7d', 'blended'][this.spreadParams.volatilityWindow]} ` +
+               `Target: ${target} asset`
+    }
 }
 
-// Spread parameters structure
+// Spread parameters structure matching the contract
 export interface SpreadParams {
-  baseSpreadBps: number        // Base spread (e.g., 50 = 0.5%)
-  volatilityMultiplier: number // Volatility impact (e.g., 200 = 2x)
-  maxSpreadBps: number        // Maximum spread (e.g., 300 = 3%)
-  volatilityWindow: 0 | 1 | 2 // 0=24h, 1=7d, 2=blended
+    baseSpreadBps: number        // Base spread in basis points
+    volatilityMultiplier: number // Volatility impact multiplier
+    maxSpreadBps: number        // Maximum spread cap
+    volatilityWindow: 0 | 1 | 2 // Time window
+    useTargetToken: boolean     // true=use makerAsset, false=use takerAsset
 }
 
 // Volatility preview result
 export interface VolatilityPreview {
-  currentVolatility: bigint
-  dynamicSpread: bigint
-  targetToken: string
-  spreadParams: SpreadParams
+    currentVolatility: bigint
+    dynamicSpread: bigint
+    targetToken: string
+    spreadParams: SpreadParams
 }
 
 // Helper for creating spread parameters
 export class SpreadParamsBuilder {
-  static conservative(): SpreadParams {
-    return {
-      baseSpreadBps: 25,      // 0.25%
-      volatilityMultiplier: 100, // 1x
-      maxSpreadBps: 150,      // 1.5%
-      volatilityWindow: 1     // 7d
-    }
-  }
-
-  static moderate(): SpreadParams {
-    return {
-      baseSpreadBps: 50,      // 0.5%
-      volatilityMultiplier: 200, // 2x
-      maxSpreadBps: 300,      // 3%
-      volatilityWindow: 0     // 24h
-    }
-  }
-
-  static aggressive(): SpreadParams {
-    return {
-      baseSpreadBps: 100,     // 1%
-      volatilityMultiplier: 500, // 5x
-      maxSpreadBps: 1000,     // 10%
-      volatilityWindow: 2     // blended
-    }
-  }
-
-  static custom(params: SpreadParams): SpreadParams {
-    // Validate parameters
-    if (params.baseSpreadBps < 0 || params.baseSpreadBps > 1000) {
-      throw new Error('Base spread must be between 0 and 1000 bps')
-    }
-    if (params.maxSpreadBps < params.baseSpreadBps || params.maxSpreadBps > 1000) {
-      throw new Error('Max spread must be >= base spread and <= 1000 bps')
-    }
-    if (params.volatilityMultiplier < 0 || params.volatilityMultiplier > 1000) {
-      throw new Error('Volatility multiplier must be between 0 and 1000')
-    }
-    if (![0, 1, 2].includes(params.volatilityWindow)) {
-      throw new Error('Volatility window must be 0, 1, or 2')
+    static conservative(): SpreadParams {
+        return {
+            baseSpreadBps: 25,
+            volatilityMultiplier: 100,
+            maxSpreadBps: 150,
+            volatilityWindow: 1,
+            useTargetToken: false
+        }
     }
 
-    return params
-  }
+    static moderate(): SpreadParams {
+        return {
+            baseSpreadBps: 50,
+            volatilityMultiplier: 200,
+            maxSpreadBps: 300,
+            volatilityWindow: 0,
+            useTargetToken: false
+        }
+    }
+
+    static aggressive(): SpreadParams {
+        return {
+            baseSpreadBps: 100,
+            volatilityMultiplier: 500,
+            maxSpreadBps: 1000,
+            volatilityWindow: 2,
+            useTargetToken: false
+        }
+    }
+
+    static custom(params: SpreadParams): SpreadParams {
+        // Validate parameters
+        if (params.baseSpreadBps < 0 || params.baseSpreadBps > 10000) {
+            throw new Error('Base spread must be between 0 and 10000 bps')
+        }
+        if (params.maxSpreadBps < params.baseSpreadBps || params.maxSpreadBps > 10000) {
+            throw new Error('Max spread must be >= base spread and <= 10000 bps')
+        }
+        if (params.volatilityMultiplier < 0 || params.volatilityMultiplier > 10000) {
+            throw new Error('Volatility multiplier must be between 0 and 10000')
+        }
+        if (![0, 1, 2].includes(params.volatilityWindow)) {
+            throw new Error('Volatility window must be 0, 1, or 2')
+        }
+
+        return params
+    }
 }
 
-// Contract ABI for VolatilitySpreadCalculator
+// Contract ABI - minimal interface needed
 const VOLATILITY_CALCULATOR_ABI = [
-  'function getTakingAmount(tuple(uint256 salt, address maker, address receiver, address makerAsset, address takerAsset, uint256 makingAmount, uint256 takingAmount, uint256 makerTraits) order, bytes extension, bytes32 orderHash, address taker, uint256 makingAmount, uint256 remainingMakingAmount, bytes extraData) external view returns (uint256)',
-  'function getMakingAmount(tuple(uint256 salt, address maker, address receiver, address makerAsset, address takerAsset, uint256 makingAmount, uint256 takingAmount, uint256 makerTraits) order, bytes extension, bytes32 orderHash, address taker, uint256 takingAmount, uint256 remainingMakingAmount, bytes extraData) external view returns (uint256)',
-  'function previewSpread(address tokenA, uint256 baseSpreadBps, uint256 volatilityMultiplier, uint256 maxSpreadBps, uint8 volatilityWindow) external view returns (uint256 currentVolatility, uint256 dynamicSpread)',
-  'function previewVolatility(address token, uint8 volatilityWindow) external view returns (uint256 currentVolatility)',
-  'function validateSpreadParams(uint256 baseSpreadBps, uint256 volatilityMultiplier, uint256 maxSpreadBps, uint8 volatilityWindow) external pure'
+  {
+      "type": "constructor",
+      "inputs": [
+          {
+              "name": "_admin",
+              "type": "address",
+              "internalType": "address"
+          }
+      ],
+      "stateMutability": "nonpayable"
+  },
+  {
+      "type": "function",
+      "name": "addTokenFeeds",
+      "inputs": [
+          {
+              "name": "tokens",
+              "type": "address[]",
+              "internalType": "address[]"
+          },
+          {
+              "name": "priceFeeds",
+              "type": "address[]",
+              "internalType": "address[]"
+          },
+          {
+              "name": "isStablecoin",
+              "type": "bool[]",
+              "internalType": "bool[]"
+          },
+          {
+              "name": "volatilityOverrides",
+              "type": "uint256[]",
+              "internalType": "uint256[]"
+          }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+  },
+  {
+      "type": "function",
+      "name": "admin",
+      "inputs": [],
+      "outputs": [
+          {
+              "name": "",
+              "type": "address",
+              "internalType": "address"
+          }
+      ],
+      "stateMutability": "view"
+  },
+  {
+      "type": "function",
+      "name": "encodeSpreadParams",
+      "inputs": [
+          {
+              "name": "baseSpreadBps",
+              "type": "uint256",
+              "internalType": "uint256"
+          },
+          {
+              "name": "_volatilityMultiplier",
+              "type": "uint256",
+              "internalType": "uint256"
+          },
+          {
+              "name": "maxSpreadBps",
+              "type": "uint256",
+              "internalType": "uint256"
+          },
+          {
+              "name": "volatilityWindow",
+              "type": "uint8",
+              "internalType": "uint8"
+          },
+          {
+              "name": "useTargetToken",
+              "type": "bool",
+              "internalType": "bool"
+          }
+      ],
+      "outputs": [
+          {
+              "name": "",
+              "type": "bytes",
+              "internalType": "bytes"
+          }
+      ],
+      "stateMutability": "pure"
+  },
+  {
+      "type": "function",
+      "name": "getMakingAmount",
+      "inputs": [
+          {
+              "name": "order",
+              "type": "tuple",
+              "internalType": "struct IOrderMixin.Order",
+              "components": [
+                  {
+                      "name": "salt",
+                      "type": "uint256",
+                      "internalType": "uint256"
+                  },
+                  {
+                      "name": "maker",
+                      "type": "uint256",
+                      "internalType": "Address"
+                  },
+                  {
+                      "name": "receiver",
+                      "type": "uint256",
+                      "internalType": "Address"
+                  },
+                  {
+                      "name": "makerAsset",
+                      "type": "uint256",
+                      "internalType": "Address"
+                  },
+                  {
+                      "name": "takerAsset",
+                      "type": "uint256",
+                      "internalType": "Address"
+                  },
+                  {
+                      "name": "makingAmount",
+                      "type": "uint256",
+                      "internalType": "uint256"
+                  },
+                  {
+                      "name": "takingAmount",
+                      "type": "uint256",
+                      "internalType": "uint256"
+                  },
+                  {
+                      "name": "makerTraits",
+                      "type": "uint256",
+                      "internalType": "MakerTraits"
+                  }
+              ]
+          },
+          {
+              "name": "",
+              "type": "bytes",
+              "internalType": "bytes"
+          },
+          {
+              "name": "",
+              "type": "bytes32",
+              "internalType": "bytes32"
+          },
+          {
+              "name": "",
+              "type": "address",
+              "internalType": "address"
+          },
+          {
+              "name": "takingAmount",
+              "type": "uint256",
+              "internalType": "uint256"
+          },
+          {
+              "name": "",
+              "type": "uint256",
+              "internalType": "uint256"
+          },
+          {
+              "name": "extraData",
+              "type": "bytes",
+              "internalType": "bytes"
+          }
+      ],
+      "outputs": [
+          {
+              "name": "makingAmount",
+              "type": "uint256",
+              "internalType": "uint256"
+          }
+      ],
+      "stateMutability": "view"
+  },
+  {
+      "type": "function",
+      "name": "getTakingAmount",
+      "inputs": [
+          {
+              "name": "order",
+              "type": "tuple",
+              "internalType": "struct IOrderMixin.Order",
+              "components": [
+                  {
+                      "name": "salt",
+                      "type": "uint256",
+                      "internalType": "uint256"
+                  },
+                  {
+                      "name": "maker",
+                      "type": "uint256",
+                      "internalType": "Address"
+                  },
+                  {
+                      "name": "receiver",
+                      "type": "uint256",
+                      "internalType": "Address"
+                  },
+                  {
+                      "name": "makerAsset",
+                      "type": "uint256",
+                      "internalType": "Address"
+                  },
+                  {
+                      "name": "takerAsset",
+                      "type": "uint256",
+                      "internalType": "Address"
+                  },
+                  {
+                      "name": "makingAmount",
+                      "type": "uint256",
+                      "internalType": "uint256"
+                  },
+                  {
+                      "name": "takingAmount",
+                      "type": "uint256",
+                      "internalType": "uint256"
+                  },
+                  {
+                      "name": "makerTraits",
+                      "type": "uint256",
+                      "internalType": "MakerTraits"
+                  }
+              ]
+          },
+          {
+              "name": "",
+              "type": "bytes",
+              "internalType": "bytes"
+          },
+          {
+              "name": "",
+              "type": "bytes32",
+              "internalType": "bytes32"
+          },
+          {
+              "name": "",
+              "type": "address",
+              "internalType": "address"
+          },
+          {
+              "name": "makingAmount",
+              "type": "uint256",
+              "internalType": "uint256"
+          },
+          {
+              "name": "",
+              "type": "uint256",
+              "internalType": "uint256"
+          },
+          {
+              "name": "extraData",
+              "type": "bytes",
+              "internalType": "bytes"
+          }
+      ],
+      "outputs": [
+          {
+              "name": "takingAmount",
+              "type": "uint256",
+              "internalType": "uint256"
+          }
+      ],
+      "stateMutability": "view"
+  },
+  {
+      "type": "function",
+      "name": "previewSpread",
+      "inputs": [
+          {
+              "name": "tokenA",
+              "type": "address",
+              "internalType": "address"
+          },
+          {
+              "name": "baseSpreadBps",
+              "type": "uint256",
+              "internalType": "uint256"
+          },
+          {
+              "name": "volatilityMultiplier",
+              "type": "uint256",
+              "internalType": "uint256"
+          },
+          {
+              "name": "maxSpreadBps",
+              "type": "uint256",
+              "internalType": "uint256"
+          },
+          {
+              "name": "volatilityWindow",
+              "type": "uint8",
+              "internalType": "uint8"
+          }
+      ],
+      "outputs": [
+          {
+              "name": "currentVolatility",
+              "type": "uint256",
+              "internalType": "uint256"
+          },
+          {
+              "name": "dynamicSpread",
+              "type": "uint256",
+              "internalType": "uint256"
+          }
+      ],
+      "stateMutability": "view"
+  },
+  {
+      "type": "function",
+      "name": "previewVolatility",
+      "inputs": [
+          {
+              "name": "token",
+              "type": "address",
+              "internalType": "address"
+          },
+          {
+              "name": "volatilityWindow",
+              "type": "uint8",
+              "internalType": "uint8"
+          }
+      ],
+      "outputs": [
+          {
+              "name": "currentVolatility",
+              "type": "uint256",
+              "internalType": "uint256"
+          }
+      ],
+      "stateMutability": "view"
+  },
+  {
+      "type": "function",
+      "name": "resolveExtension",
+      "inputs": [
+          {
+              "name": "",
+              "type": "address",
+              "internalType": "address"
+          },
+          {
+              "name": "extension",
+              "type": "bytes",
+              "internalType": "bytes"
+          }
+      ],
+      "outputs": [
+          {
+              "name": "",
+              "type": "bytes",
+              "internalType": "bytes"
+          }
+      ],
+      "stateMutability": "view"
+  },
+  {
+      "type": "event",
+      "name": "SpreadCalculated",
+      "inputs": [
+          {
+              "name": "orderHash",
+              "type": "bytes32",
+              "indexed": true,
+              "internalType": "bytes32"
+          },
+          {
+              "name": "token",
+              "type": "address",
+              "indexed": true,
+              "internalType": "address"
+          },
+          {
+              "name": "volatility",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+          },
+          {
+              "name": "dynamicSpread",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+          },
+          {
+              "name": "adjustedAmount",
+              "type": "uint256",
+              "indexed": false,
+              "internalType": "uint256"
+          }
+      ],
+      "anonymous": false
+  },
+  {
+      "type": "error",
+      "name": "InvalidParam",
+      "inputs": []
+  },
+  {
+      "type": "error",
+      "name": "RestrictedOperation",
+      "inputs": []
+  },
+  {
+      "type": "error",
+      "name": "SpreadTooHigh",
+      "inputs": []
+  },
+  {
+      "type": "error",
+      "name": "TokenNotSupported",
+      "inputs": []
+  }
 ]

@@ -5,7 +5,8 @@ import {
     LimitOrderWithVolatility,
     MakerTraits,
     OrderInfoData,
-    VolatilitySpreadExt
+    VolatilitySpreadExt,
+    Interaction
 } from '../limit-order/index.js'
 
 export interface VolatilityConfig {
@@ -13,37 +14,116 @@ export interface VolatilityConfig {
     volatilityContractAddress: string
 }
 
+/**
+ * SDK for creating limit orders with volatility-based dynamic spreads
+ * This follows the same pattern as the main Sdk class
+ */
 export class VolatilitySdk {
     private readonly provider: Provider
-    private readonly volatilityContractAddress: string
+    private readonly volatilityContractAddress: Address
 
     constructor(config: VolatilityConfig) {
         this.provider = config.provider
-        this.volatilityContractAddress = config.volatilityContractAddress
+        this.volatilityContractAddress = new Address(config.volatilityContractAddress)
     }
 
     /**
-     * Create LimitOrder with volatility extension params
-     *
-     * @returns LimitOrderWithVolatility to sign and handle locally
+     * Create LimitOrder with volatility extension
+     * Following the pattern of Sdk.createOrder()
+     * 
+     * @param orderInfo Order information
+     * @param spreadParams Volatility spread parameters
+     * @param makerTraits Optional maker traits
+     * @param extra Optional extras like makerPermit
+     * @returns LimitOrderWithVolatility ready to sign
      */
     public async createOrder(
         orderInfo: OrderInfoData,
-        targetToken: Address,
         spreadParams: VolatilitySpreadExt.SpreadParams,
-        makerTraits = MakerTraits.default()
+        makerTraits = MakerTraits.default(),
+        extra: {
+            makerPermit?: Interaction
+        } = {}
     ): Promise<LimitOrderWithVolatility> {
+        
+        // Create the volatility extension
+        const volatilityExt = VolatilitySpreadExt.VolatilitySpreadExtension.new(
+            this.volatilityContractAddress,
+            spreadParams,
+            {
+                makerPermit: extra.makerPermit,
+                provider: this.provider
+            }
+        )
 
-        console.log("targetToken: ",  targetToken)
+        // Create the order with volatility extension
+        return new LimitOrderWithVolatility(orderInfo, makerTraits, volatilityExt)
+    }
+
+    /**
+     * Preview current volatility and spread for a token pair
+     * 
+     * @param makerAsset Maker asset address
+     * @param takerAsset Taker asset address
+     * @param spreadParams Spread parameters to use
+     * @returns Preview of current volatility and calculated spread
+     */
+    public async previewVolatility(
+        makerAsset: Address,
+        takerAsset: Address,
+        spreadParams: VolatilitySpreadExt.SpreadParams
+    ): Promise<VolatilitySpreadExt.VolatilityPreview> {
+        // Create temporary extension just for preview
+        const tempExt = VolatilitySpreadExt.VolatilitySpreadExtension.new(
+            this.volatilityContractAddress,
+            spreadParams,
+            {
+                provider: this.provider
+            }
+        )
+
+        return tempExt.previewVolatilitySpread(makerAsset, takerAsset)
+    }
+
+    /**
+     * Get the volatility contract address
+     * 
+     * @returns Volatility calculator contract address
+     */
+    public getVolatilityContractAddress(): Address {
+        return this.volatilityContractAddress
+    }
+
+    /**
+     * Create order with random nonce
+     * Convenience method following Sdk pattern
+     * 
+     * @param orderInfo Order information
+     * @param spreadParams Volatility spread parameters
+     * @param extra Optional extras
+     * @returns LimitOrderWithVolatility with random nonce
+     */
+    public async createOrderWithRandomNonce(
+        orderInfo: OrderInfoData,
+        spreadParams: VolatilitySpreadExt.SpreadParams,
+        extra: {
+            makerPermit?: Interaction
+        } = {}
+    ): Promise<LimitOrderWithVolatility> {
         
         const volatilityExt = VolatilitySpreadExt.VolatilitySpreadExtension.new(
-            new Address(this.volatilityContractAddress),
-            targetToken,
+            this.volatilityContractAddress,
             spreadParams,
-            this.provider
+            {
+                makerPermit: extra.makerPermit,
+                provider: this.provider
+            }
         )
-        console.log("volatilityExt: ", volatilityExt)
 
-        return new LimitOrderWithVolatility(orderInfo, makerTraits, volatilityExt)
+        return LimitOrderWithVolatility.withRandomNonce(
+            orderInfo,
+            volatilityExt,
+            MakerTraits.default()
+        )
     }
 }

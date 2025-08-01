@@ -1,6 +1,8 @@
-import {JsonRpcProvider, Wallet, parseEther, parseUnits, formatEther, formatUnits} from 'ethers';
-import {VolatilitySdk, Address, MakerTraits, VolatilitySpreadExt,randBigInt} from '@1inch/limit-order-sdk';
-
+import {JsonRpcProvider, Wallet, parseEther, parseUnits, formatEther, formatUnits, Contract, ethers} from 'ethers';
+import {VolatilitySdk, Address, MakerTraits, VolatilitySpreadExt, randBigInt,LimitOrderContract,TakerTraits} from '@1inch/limit-order-sdk';
+import VolatilitySpreadCalculatorArtifact from '../../contracts/out/VolatilitySpreadCalculator.sol/VolatilitySpreadCalculator.json' with { type: 'json' };
+// import AggregationRouterV6ABI from '../src/abi/AggregationRouterV6.abi.json'
+// npx ts-node -r dotenv/config tests/volatilityDemo.ts  
 /**
  * VolatilitySdk Order Creation Demo
  * 
@@ -11,28 +13,156 @@ import {VolatilitySdk, Address, MakerTraits, VolatilitySpreadExt,randBigInt} fro
  * 4. Previewing volatility effects
  * 5. Filling and cancelling orders
  */
+
+// ============ SETUP ============
+const provider = new JsonRpcProvider(process.env.RPC_URL!)
+const makerWallet = new Wallet(process.env.PRIVATE_KEY!, provider)
+const takerWallet = new Wallet(process.env.TAKER_PRIVATE_KEY || process.env.PRIVATE_KEY!, provider)
+
+// Contract artifacts
+const VOLATILITY_CALCULATOR_ABI = VolatilitySpreadCalculatorArtifact.abi;
+const VOLATILITY_CALCULATOR_BYTECODE = VolatilitySpreadCalculatorArtifact.bytecode.object || VolatilitySpreadCalculatorArtifact.bytecode;
+
+// Global variable to store deployed contract address
+let calculatorAddress: string = process.env.VOLATILITY_CONTRACT_ADDRESS || '';
+
+async function deployVolatilityExtension() {
+  console.log('🏗️  Deploying VolatilitySpreadCalculator')
+  console.log('=' .repeat(40))
+
+  try {
+    // Check if contract is already deployed
+    if (calculatorAddress && calculatorAddress !== '') {
+      console.log(`   ✅ Using existing contract at: ${calculatorAddress}`)
+      return {
+        address: calculatorAddress,
+        contract: new ethers.Contract(calculatorAddress, VOLATILITY_CALCULATOR_ABI, provider)
+      }
+    }
+
+    // Deploy the contract
+    const contractFactory = new ethers.ContractFactory(
+      VOLATILITY_CALCULATOR_ABI,
+      VOLATILITY_CALCULATOR_BYTECODE,
+      makerWallet
+    )
+
+    const owner = makerWallet.address
+    console.log(`   Deploying with owner: ${owner}`)
+
+    // Estimate gas for deployment
+    const deployTx = await contractFactory.getDeployTransaction(owner)
+    const estimatedGas = await provider.estimateGas(deployTx)
+    console.log(`   Estimated gas: ${estimatedGas}`)
+
+    const calculator = await contractFactory.deploy(owner, {
+      gasLimit: estimatedGas + 100000n // Add 100k gas buffer
+    })
+    
+    console.log(`   Deployment transaction: ${calculator.deploymentTransaction()?.hash}`)
+    
+    await calculator.waitForDeployment()
+    calculatorAddress = await calculator.getAddress()
+    console.log(`   ✅ Contract deployed at: ${calculatorAddress}`)
+
+    // Mainnet token addresses (same as Foundry script)
+    const WETH = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
+    const USDC = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+    const DAI = '0x6B175474E89094C44Da98b954EedeAC495271d0F'
+
+    // Chainlink Price Feeds (same as Foundry script)
+    const ETH_USD_FEED = '0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419'
+    const USDC_USD_FEED = '0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6'
+
+    // Setup token feeds
+    console.log(`\n🔧 Setting up token feeds...`)
+    
+    const tokens = [WETH, USDC, DAI]
+    const priceFeeds = [ETH_USD_FEED, USDC_USD_FEED, USDC_USD_FEED] // DAI uses USDC feed
+    const isStablecoin = [false, true, true]
+    const volatilityOverrides = [2000, 0, 0] // 20% volatility for WETH, default for stablecoins
+
+    const setupTx = await calculator.addTokenFeeds(
+      tokens,
+      priceFeeds, 
+      isStablecoin,
+      volatilityOverrides,
+      {
+        gasLimit: 500000 // Explicit gas limit for setup
+      }
+    )
+    
+    console.log(`   Setup transaction: ${setupTx.hash}`)
+    await setupTx.wait()
+
+    console.log(`   ✅ Token feeds configured:`)
+    console.log(`      WETH: ${WETH} (ETH/USD feed, 20% test volatility)`)
+    console.log(`      USDC: ${USDC} (USDC/USD feed, stablecoin)`)
+    console.log(`      DAI:  ${DAI} (USDC/USD feed, stablecoin)`)
+
+    // Test the contract with a preview call
+    console.log(`\n🧪 Testing contract functionality...`)
+    
+    try {
+      const [currentVolatility, dynamicSpread] = await calculator.previewSpread(
+        WETH,    // token
+        25,      // baseSpreadBps (0.25%)
+        100,     // volatilityMultiplier (1x)
+        150,     // maxSpreadBps (1.5%)
+        0        // volatilityWindow (24h)
+      )
+
+      console.log(`   Current Volatility: ${currentVolatility} (${Number(currentVolatility) / 100}%)`)
+      console.log(`   Dynamic Spread: ${dynamicSpread} bps (${Number(dynamicSpread) / 100}%)`)
+      console.log(`   ✅ Contract is working correctly!`)
+
+    } catch (error: any) {
+      console.log(`   ⚠️  Preview call failed: ${error.message}`)
+      console.log(`   Contract deployed but may need additional setup`)
+    }
+
+    // Update environment variable for use in the rest of the demo
+    process.env.VOLATILITY_CONTRACT_ADDRESS = calculatorAddress
+    console.log(`\n📝 Updated VOLATILITY_CONTRACT_ADDRESS: ${calculatorAddress}`)
+
+    return {
+      contract: calculator,
+      address: calculatorAddress,
+      tokens: { WETH, USDC, DAI },
+      priceFeeds: { ETH_USD_FEED, USDC_USD_FEED }
+    }
+
+  } catch (error: any) {
+    console.error(`   ❌ Deployment failed: ${error.message}`)
+    if (error.data) {
+      console.error(`   Error data: ${error.data}`)
+    }
+    throw error
+  }
+}
+// async function setUpLimitOrder(){
+//   const aggregatorContract = getLimitOrderContract(Number(`1`))
+//   const limitOrderContract = new Contract(aggregatorContract, AggregationRouterV6ABI, provider)
+
+//   console
+// }
+
 async function volatilitySdkOrderDemo() {
   console.log('🚀 VolatilitySdk Order Creation Demo\n')
 
-  // ============ SETUP ============
-  const provider = new JsonRpcProvider(process.env.RPC_URL)
-  const makerWallet = new Wallet(process.env.PRIVATE_KEY!, provider)
-  const takerWallet = new Wallet(process.env.TAKER_PRIVATE_KEY || process.env.PRIVATE_KEY!, provider)
-
   const expiresIn = 120n // 2m
   const expiration = BigInt(Math.floor(Date.now() / 1000)) + expiresIn
-
   const UINT_40_MAX = (1n << 40n) - 1n
 
-    console.log("expiration", expiration)
-    console.log("UINT_40_MAX", UINT_40_MAX)
+  console.log("expiration", expiration)
+  console.log("UINT_40_MAX", UINT_40_MAX)
 
   // see MakerTraits.ts
   const makerTraits = MakerTraits.default()
     .withExpiration(expiration)
     .withNonce(randBigInt(UINT_40_MAX))
 
-    console.log("makerTraits", makerTraits)
+  console.log("makerTraits", makerTraits)
 
   const network = await provider.getNetwork();
   const chainId = Number(network.chainId);
@@ -47,13 +177,18 @@ async function volatilitySdkOrderDemo() {
   console.log('📊 Initializing VolatilitySdk')
   console.log('=' .repeat(40))
 
+  // Make sure we have a contract address
+  if (!calculatorAddress || calculatorAddress === '') {
+    throw new Error('Contract address not available. Deploy contract first.')
+  }
+
   const volatilitySdk = new VolatilitySdk({
     provider,
-    volatilityContractAddress: process.env.VOLATILITY_CONTRACT_ADDRESS!
+    volatilityContractAddress: calculatorAddress
   })
 
   console.log(`✅ VolatilitySdk initialized`)
-  console.log(`   Contract: ${process.env.VOLATILITY_CONTRACT_ADDRESS}\n`)
+  console.log(`   Contract: ${calculatorAddress}\n`)
 
   // Token addresses
   const tokens = {
@@ -67,10 +202,11 @@ async function volatilitySdkOrderDemo() {
 
   // Define conservative spread parameters with proper formatting
   const conservativeSpreadParams: VolatilitySpreadExt.SpreadParams = {
-    baseSpreadBps: 25,       // 0.25% base spread
-    volatilityMultiplier: 100, // 1x volatility multiplier
-    maxSpreadBps: 150,       // 1.5% max spread
-    volatilityWindow: 1      // 7-day volatility window
+    baseSpreadBps: 25,
+    volatilityMultiplier: 100,
+    maxSpreadBps: 150,
+    volatilityWindow: 0,
+    useTargetToken: false  // Required field - tells contract which token to use
   }
 
   console.log(`\n🔹 Creating Conservative Order:`)
@@ -79,7 +215,7 @@ async function volatilitySdkOrderDemo() {
   console.log(`   Max Spread: ${conservativeSpreadParams.maxSpreadBps / 100}%`)
   console.log(`   Window: ${conservativeSpreadParams.volatilityWindow === 0 ? '24h' : conservativeSpreadParams.volatilityWindow === 1 ? '7d' : 'blended'}`)
 
-  // try {
+  try {
     // Create order using SDK
     const conservativeOrder = await volatilitySdk.createOrder(
       {
@@ -88,8 +224,7 @@ async function volatilitySdkOrderDemo() {
         takerAsset: tokens.USDC,
         makingAmount: parseEther('1.0'),      // Selling 1 ETH
         takingAmount: parseUnits('3000', 6)   // For 3000 USDC
-      },
-      tokens.USDC,                            // Use USDC volatility
+      },                      
       conservativeSpreadParams,
       makerTraits
     )
@@ -99,230 +234,87 @@ async function volatilitySdkOrderDemo() {
     console.log(`   Making Amount: ${formatEther(conservativeOrder.makingAmount)} WETH`)
     console.log(`   Taking Amount: ${formatUnits(conservativeOrder.takingAmount, 6)} USDC`)
 
-    // Preview volatility effects
+    // Test the contract call directly (optional - for debugging)
     try {
-      const adjustedTaking = await conservativeOrder.getTakingAmount()
-      const spreadEffect = adjustedTaking - conservativeOrder.takingAmount
-      const spreadPercent = Number((spreadEffect * 10000n) / conservativeOrder.takingAmount) / 100
+      const contract = new ethers.Contract(
+        calculatorAddress,
+        VOLATILITY_CALCULATOR_ABI,
+        provider
+      );
 
-      console.log(`\n📊 Volatility Effects:`)
-      console.log(`   Original Taking: ${formatUnits(conservativeOrder.takingAmount, 6)} USDC`)
-      console.log(`   With Volatility: ${formatUnits(adjustedTaking, 6)} USDC`)
-      console.log(`   Spread Effect: +${formatUnits(spreadEffect, 6)} USDC (${spreadPercent.toFixed(2)}%)`)
-
-      const currentVolatility = await conservativeOrder.getCurrentVolatility()
-      const currentSpread = await conservativeOrder.getVolatilitySpread()
-      console.log(`   Current Volatility: ${formatUnits(currentVolatility.toString(), 2)}%`)
-      console.log(`   Current Spread: ${formatUnits(currentSpread.toString(), 2)}%`)
-
+      const result = await contract.previewSpread.staticCall(
+        '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', // USDC
+        25,  // baseSpreadBps
+        100, // volatilityMultiplier
+        150, // maxSpreadBps
+        0    // volatilityWindow
+      );
+      console.log('Direct call result:', result);
     } catch (error: any) {
-      console.log(`   📊 Volatility preview: ${error.message}`)
+      console.log('Direct call error:', error.message);
     }
 
     // Sign the order
     console.log(`\n🔐 Signing order...`)
     const orderTypedData = conservativeOrder.getTypedData(chainId)
+    console.log('orderTypedData', JSON.stringify(orderTypedData, null, 2));
+    
     const signature = await makerWallet.signTypedData(
       orderTypedData.domain,
-      orderTypedData.types,
+      {Order: orderTypedData.types.Order},
       orderTypedData.message
     )
-    console.log(`   ✅ Order signed: ${signature.slice(0, 20)}...`)
+    console.log(`   ✅ Order signed: ${signature}`)
+
+    const limitOrderContract = new LimitOrderContract()
+
+  //   static getFillOrderArgsCalldata(
+  //     order: LimitOrderV4Struct,
+  //     signature: string,
+  //     takerTraits: TakerTraits,
+  //     amount: bigint
+  // )
+
+   const takerTraits = TakerTraits.default()
+
+    const fillOrderArgs  = limitOrderContract.getFillOrderArgsCalldata(conservativeOrder, signature,)
 
     // Store order reference for later use
     const order1 = { order: conservativeOrder, signature }
+    
+    console.log(`\n📊 Order Demo Complete!`)
+    return order1
 
-  // } catch (error: any) {
-  //   console.log(`   ❌ Failed to create order: ${error.message}`)
-  // }
-
-  // // ============ SCENARIO 2: Aggressive WETH/USDC Order ============
-  // console.log(`\n\n📊 SCENARIO 2: Aggressive WETH/USDC Order`)
-  // console.log('=' .repeat(40))
-
-  // // Define aggressive spread parameters
-  // const aggressiveSpreadParams: VolatilitySpreadExt.SpreadParams = {
-  //   baseSpreadBps: 100,      // 1% base spread
-  //   volatilityMultiplier: 500, // 5x volatility multiplier
-  //   maxSpreadBps: 1000,      // 10% max spread
-  //   volatilityWindow: 2      // Blended volatility window
-  // }
-
-  // console.log(`\n🔹 Creating Aggressive Order:`)
-  // console.log(`   Base Spread: ${aggressiveSpreadParams.baseSpreadBps / 100}%`)
-  // console.log(`   Volatility Multiplier: ${aggressiveSpreadParams.volatilityMultiplier / 100}x`)
-  // console.log(`   Max Spread: ${aggressiveSpreadParams.maxSpreadBps / 100}%`)
-  // console.log(`   Window: blended`)
-
-  // try {
-  //   const aggressiveOrder = await volatilitySdk.createOrder(
-  //     {
-  //       maker: new Address(makerWallet.address),
-  //       makerAsset: tokens.WETH,
-  //       takerAsset: tokens.USDC,
-  //       makingAmount: parseEther('0.1'),       // Selling 0.1 ETH
-  //       takingAmount: parseUnits('300', 6)     // For 300 USDC
-  //     },
-  //     tokens.WETH,
-  //     aggressiveSpreadParams,
-  //     MakerTraits.default()
-  //   )
-
-  //   console.log(`\n✅ Aggressive order created!`)
-  //   console.log(`   Order Hash: ${aggressiveOrder.getOrderHash(chainId)}`)
-  //   console.log(`   Making: ${formatEther(aggressiveOrder.makingAmount)} WETH`)
-  //   console.log(`   Taking: ${formatUnits(aggressiveOrder.takingAmount, 6)} USDC`)
-
-  //   // Show order info
-  //   console.log(`\n📋 Order Details:`)
-  //   console.log(`   ${aggressiveOrder.getOrderInfo()}`)
-  //   console.log(`   Target Token: ${aggressiveOrder.getTargetToken().toString().slice(0, 8)}...`)
-
-  //   // Sign the order
-  //   const aggressiveOrderTypedData = aggressiveOrder.getTypedData(chainId)
-  //   const aggressiveSignature = await makerWallet.signTypedData(
-  //     aggressiveOrderTypedData.domain,
-  //     aggressiveOrderTypedData.types,
-  //     aggressiveOrderTypedData.message
-  //   )
-  //   console.log(`   ✅ Aggressive order signed`)
-
-  //   // Store for later use
-  //   const order2 = { order: aggressiveOrder, signature: aggressiveSignature }
-
-  // } catch (error: any) {
-  //   console.log(`   ❌ Failed to create aggressive order: ${error.message}`)
-  // }
-
-  // // ============ SCENARIO 3: Custom Parameters Order ============
-  // console.log(`\n\n📊 SCENARIO 3: Custom Parameters Order`)
-  // console.log('=' .repeat(40))
-
-  // // Custom spread parameters
-  // const customSpreadParams: VolatilitySpreadExt.SpreadParams = {
-  //   baseSpreadBps: 75,       // 0.75% base
-  //   volatilityMultiplier: 250, // 2.5x multiplier
-  //   maxSpreadBps: 400,       // 4% max
-  //   volatilityWindow: 0      // 24h window
-  // }
-
-  // console.log(`\n🔹 Creating Custom Order:`)
-  // console.log(`   Custom Parameters: ${customSpreadParams.baseSpreadBps / 100}% base, ${customSpreadParams.volatilityMultiplier / 100}x multiplier`)
-
-  // try {
-  //   // Add custom maker traits
-  //   const customMakerTraits = MakerTraits.default()
-  //     .withExpiration(BigInt(Math.floor(Date.now() / 1000) + 24 * 60 * 60))
-
-  //   const customOrder = await volatilitySdk.createOrder(
-  //     {
-  //       maker: new Address(makerWallet.address),
-  //       makerAsset: tokens.WETH,
-  //       takerAsset: tokens.USDC,
-  //       makingAmount: parseEther('0.5'),       // Selling 0.5 ETH
-  //       takingAmount: parseUnits('1500', 6)    // For 1500 USDC
-  //     },
-  //     tokens.WETH,                              // Use ETH volatility this time
-  //     customSpreadParams,
-  //     customMakerTraits
-  //   )
-
-  //   console.log(`\n✅ Custom order created with expiration!`)
-  //   console.log(`   Order Hash: ${customOrder.getOrderHash(chainId)}`)
-
-  //   // Check if volatility has changed significantly
-  //   const hasChanged = await customOrder.hasVolatilityChanged(50) // 0.5% threshold
-  //   console.log(`   Significant volatility change: ${hasChanged ? 'Yes' : 'No'}`)
-
-  // } catch (error: any) {
-  //   console.log(`   ❌ Failed to create custom order: ${error.message}`)
-  // }
-
-  // // ============ SCENARIO 4: Order Operations ============
-  // console.log(`\n\n📊 SCENARIO 4: Order Operations`)
-  // console.log('=' .repeat(40))
-
-  // console.log(`\n🔄 Order Operations Available:`)
-  // console.log(`   1. Fill Order:`)
-  // console.log(`      await volatilitySdk.fillOrder(order, signature, takerWallet)`)
-  
-  // console.log(`\n   2. Cancel Order:`)
-  // console.log(`      await volatilitySdk.cancelOrder(order, makerWallet)`)
-
-  // console.log(`\n   3. Preview Amounts:`)
-  // console.log(`      const adjustedAmount = await order.getTakingAmount()`)
-  // console.log(`      const currentSpread = await order.getVolatilitySpread()`)
-
-  // // ============ SCENARIO 5: Multiple Order Creation ============
-  // console.log(`\n\n📊 SCENARIO 5: Batch Order Creation`)
-  // console.log('=' .repeat(40))
-
-  // const orderConfigs = [
-  //   { name: 'Small ETH', making: '0.1', taking: '300', spread: conservativeSpreadParams },
-    // { name: 'Medium ETH', making: '0.5', taking: '1500', spread: aggressiveSpreadParams },
-    // { name: 'Large ETH', making: '2.0', taking: '6000', spread: customSpreadParams }
-  // ]
-
-  // console.log(`\n🔹 Creating ${orderConfigs.length} orders in batch:`)
-
-  // const createdOrders = []
-  // for (const config of orderConfigs) {
-  //   try {
-  //     const order = await volatilitySdk.createOrder(
-  //       {
-  //         maker: new Address(makerWallet.address),
-  //         makerAsset: tokens.WETH,
-  //         takerAsset: tokens.USDC,
-  //         makingAmount: parseEther(config.making),
-  //         takingAmount: parseUnits(config.taking, 6)
-  //       },
-  //       tokens.USDC,
-  //       config.spread
-  //     )
-
-  //     createdOrders.push(order)
-  //     console.log(`   ✅ ${config.name}: ${order.getOrderHash(chainId).slice(0, 10)}...`)
-
-  //   } catch (error: any) {
-  //     console.log(`   ❌ ${config.name}: ${error.message}`)
-  //   }
-  // }
+  } catch (error: any) {
+    console.error(`   ❌ Failed to create order: ${error.message}`)
+    throw error
+  }
 }
 
 // Error handling wrapper
 async function runVolatilitySdkOrderDemo() {
   try {
+    console.log('🎯 Starting Volatility SDK Demo\n')
+    
+    // Deploy contract first
+    await deployVolatilityExtension()
+    
+    // Then run the demo
     await volatilitySdkOrderDemo()
+    
+    console.log('\n🎉 Demo completed successfully!')
+    
   } catch (error: any) {
-    console.error(`❌ Demo failed:`, error)
-    
-    if (error.code === 'NETWORK_ERROR') {
-      console.error(`💡 Hint: Check your RPC_URL and network connectivity`)
-    } else if (error.message?.includes('VOLATILITY_CONTRACT_ADDRESS')) {
-      console.error(`💡 Hint: Set VOLATILITY_CONTRACT_ADDRESS in your .env file`)
-    } else if (error.message?.includes('revert')) {
-      console.error(`💡 Hint: Contract may not be deployed or configured`)
-    } else if (error.message?.includes('MakingAmountData')) {
-      console.error(`💡 Hint: Check spread parameters format or contract configuration`)
+    console.error('\n💥 Demo failed:', error.message)
+    if (error.stack) {
+      console.error('Stack trace:', error.stack)
     }
-    
     process.exit(1)
   }
 }
 
-// Global error handlers
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
-  process.exit(1);
-});
-
-process.on('uncaughtException', (error) => {
-  console.error('❌ Uncaught Exception:', error);
-  process.exit(1);
-});
-
 // Export for use as module
-export { volatilitySdkOrderDemo, runVolatilitySdkOrderDemo }
+export { volatilitySdkOrderDemo, runVolatilitySdkOrderDemo, deployVolatilityExtension }
 
 // Run if called directly (ES module compatible)
 const isMainModule = process.argv[1] && process.argv[1].includes('volatilityDemo');

@@ -14,37 +14,30 @@ import {randBigInt} from '../utils/rand-bigint.js'
  * @title LimitOrderWithVolatility
  * @notice Limit order with volatility-based dynamic spreads
  * 
- * This class follows the same pattern as LimitOrderWithFee but applies
- * volatility-based dynamic spreads instead of fixed fees. It extends
- * the base LimitOrder class and integrates with VolatilitySpreadExtension.
+ * This follows the exact same pattern as LimitOrderWithFee
  */
 export class LimitOrderWithVolatility extends LimitOrder {
     constructor(
         /**
-         * Order information without receiver (receiver will be set to volatility contract)
+         * Use `VolatilitySpreadExtension.customReceiver` to set custom receiver if needed
          */
         orderInfo: Omit<OrderInfoData, 'receiver'>,
         makerTraits = MakerTraits.default(),
         public readonly volatilityExtension: VolatilitySpreadExtension
     ) {
-        // Enable the extension flags needed for volatility calculation
-        makerTraits.withExtension() // Enable extension processing
-        console.log("========enabledExtension=========");
+        // Following LimitOrderWithFee pattern - no need to manually enable extension
+        // The parent constructor will handle it based on extension.isEmpty()
         
         super(
-            {...orderInfo, receiver: volatilityExtension.contractAddress},
+            {...orderInfo, receiver: volatilityExtension.address},
             makerTraits,
             volatilityExtension.build()
         )
     }
 
     /**
-     * Create LimitOrderWithVolatility with random nonce
-     * 
-     * @param orderInfo Order information
-     * @param volatilityExtension Volatility spread extension
-     * @param makerTraits Optional maker traits
-     * @returns New LimitOrderWithVolatility instance
+     * Set random nonce to `makerTraits` and creates `LimitOrderWithVolatility`
+     * Following LimitOrderWithFee.withRandomNonce() pattern
      */
     static withRandomNonce(
         orderInfo: Omit<OrderInfoData, 'receiver'>,
@@ -57,27 +50,22 @@ export class LimitOrderWithVolatility extends LimitOrder {
     }
 
     /**
-     * Create LimitOrderWithVolatility from existing order data and extension
-     * 
-     * @param data Order struct data
-     * @param extension Extension data
-     * @returns LimitOrderWithVolatility instance
+     * Create from existing order data and extension
+     * Following LimitOrderWithFee.fromDataAndExtension() pattern
      */
     static fromDataAndExtension(
         data: LimitOrderV4Struct,
         extension: Extension
     ): LimitOrderWithVolatility {
         const makerTraits = new MakerTraits(BigInt(data.makerTraits))
-        
-        // Extract volatility extension from the extension data
         const volatilityExt = VolatilitySpreadExtension.fromExtension(
-            extension, 
-            new Address(data.receiver) // Expected contract address
+            extension,
+            new Address(data.receiver)
         )
 
         assert(
-            volatilityExt.contractAddress.equal(new Address(data.receiver)),
-            `invalid order: receiver must be VolatilitySpreadCalculator address`
+            volatilityExt.address.equal(new Address(data.receiver)),
+            `invalid order: receiver must be VolatilitySpreadCalculator extension address`
         )
 
         return new LimitOrderWithVolatility(
@@ -96,55 +84,61 @@ export class LimitOrderWithVolatility extends LimitOrder {
 
     /**
      * Calculates the `takingAmount` required from the taker with volatility spread applied
+     * Note: This is a preview method - actual calculation happens on-chain
      * 
-     * @param makingAmount Amount to be filled
-     * @returns Taking amount with dynamic volatility spread
+     * @param makingAmount amount to be filled
      */
-    public async getTakingAmount(makingAmount = this.makingAmount): Promise<bigint> {
-        // Calculate base taking amount proportionally
-        const baseTakingAmount = calcTakingAmount(
+    public async getTakingAmountPreview(makingAmount = this.makingAmount): Promise<bigint> {
+
+        console.log('Getting taking amount preview...')
+        const takingAmount = calcTakingAmount(
             makingAmount,
             this.makingAmount,
             this.takingAmount
         )
 
-        // Apply volatility spread adjustment
-        try {
-            const adjustedAmount = await this.volatilityExtension.calculateAdjustedTakingAmount(
-                baseTakingAmount.toString()
+        console.log('Taking amount preview:', takingAmount)
+
+        // try {
+            const preview = await this.volatilityExtension.previewVolatilitySpread(
+                this.makerAsset,
+                this.takerAsset
             )
-            return BigInt(adjustedAmount)
-        } catch (error) {
-            // Fallback to base amount if volatility calculation fails
-            console.warn('Volatility calculation failed, using base amount:', error)
-            return baseTakingAmount
-        }
+            
+            // Apply spread: takingAmount = original + (original * spread / 10000)
+            const spreadAmount = (takingAmount * preview.dynamicSpread) / 10000n
+            return takingAmount + spreadAmount
+        // } catch (error) {
+        //     console.warn('Volatility preview failed, using base amount:', error)
+        //     return takingAmount
+        // }
     }
 
     /**
      * Calculates the `makingAmount` that the taker receives with volatility spread applied
+     * Note: This is a preview method - actual calculation happens on-chain
      * 
-     * @param takingAmount Amount to be filled
-     * @returns Making amount with dynamic volatility spread
+     * @param takingAmount amount to be filled
      */
-    public async getMakingAmount(takingAmount = this.takingAmount): Promise<bigint> {
-        // Calculate base making amount proportionally
-        const baseMakingAmount = calcMakingAmount(
+    public async getMakingAmountPreview(takingAmount = this.takingAmount): Promise<bigint> {
+        const makingAmount = calcMakingAmount(
             takingAmount,
             this.makingAmount,
             this.takingAmount
         )
 
-        // Apply volatility spread adjustment
         try {
-            const adjustedAmount = await this.volatilityExtension.calculateAdjustedMakingAmount(
-                baseMakingAmount.toString()
+            const preview = await this.volatilityExtension.previewVolatilitySpread(
+                this.makerAsset,
+                this.takerAsset
             )
-            return BigInt(adjustedAmount)
+            
+            // Apply spread: makingAmount = original - (original * spread / 10000)
+            const spreadAmount = (makingAmount * preview.dynamicSpread) / 10000n
+            return makingAmount - spreadAmount
         } catch (error) {
-            // Fallback to base amount if volatility calculation fails
-            console.warn('Volatility calculation failed, using base amount:', error)
-            return baseMakingAmount
+            console.warn('Volatility preview failed, using base amount:', error)
+            return makingAmount
         }
     }
 
@@ -155,7 +149,10 @@ export class LimitOrderWithVolatility extends LimitOrder {
      */
     public async getVolatilitySpread(): Promise<bigint> {
         try {
-            const preview = await this.volatilityExtension.previewVolatilitySpread()
+            const preview = await this.volatilityExtension.previewVolatilitySpread(
+                this.makerAsset,
+                this.takerAsset
+            )
             return preview.dynamicSpread
         } catch (error) {
             console.warn('Failed to get volatility spread:', error)
@@ -166,11 +163,14 @@ export class LimitOrderWithVolatility extends LimitOrder {
     /**
      * Get current volatility for the target token
      * 
-     * @returns Current volatility in basis points
+     * @returns Current volatility value
      */
     public async getCurrentVolatility(): Promise<bigint> {
         try {
-            const preview = await this.volatilityExtension.previewVolatilitySpread()
+            const preview = await this.volatilityExtension.previewVolatilitySpread(
+                this.makerAsset,
+                this.takerAsset
+            )
             return preview.currentVolatility
         } catch (error) {
             console.warn('Failed to get current volatility:', error)
@@ -179,96 +179,20 @@ export class LimitOrderWithVolatility extends LimitOrder {
     }
 
     /**
-     * Calculate the spread effect on a given amount
+     * Get spread parameters used by this order
      * 
-     * @param baseAmount Base amount before spread
-     * @param isForTaking Whether this is for taking amount (true) or making amount (false)
-     * @returns Spread effect amount
-     */
-    public async getSpreadEffect(baseAmount: bigint, isForTaking: boolean = true): Promise<bigint> {
-        try {
-            const spread = await this.getVolatilitySpread()
-            const spreadAmount = (baseAmount * spread) / 10000n
-            
-            // For taking amount, spread is added (taker pays more)
-            // For making amount, spread is subtracted (maker gives less)
-            return isForTaking ? spreadAmount : -spreadAmount
-        } catch (error) {
-            console.warn('Failed to calculate spread effect:', error)
-            return 0n
-        }
-    }
-
-    /**
-     * Get human-readable order information including volatility details
-     * 
-     * @returns Order information string
-     */
-    public getOrderInfo(): string {
-        const makerAssetStr = this.makerAsset.toString()
-        const takerAssetStr = this.takerAsset.toString()
-        const makingAmountStr = this.makingAmount.toString()
-        const takingAmountStr = this.takingAmount.toString()
-        
-        return `VolatilityOrder(${makerAssetStr.slice(0, 8)}.../${takerAssetStr.slice(0, 8)}...) ` +
-               `Making: ${makingAmountStr} Taking: ${takingAmountStr} ` +
-               `${this.volatilityExtension.getInfo()}`
-    }
-
-    /**
-     * Check if this order has significant volatility changes since creation
-     * 
-     * @param thresholdBps Threshold in basis points for significant change
-     * @returns Whether volatility has changed significantly
-     */
-    public async hasVolatilityChanged(thresholdBps: number = 50): Promise<boolean> {
-        try {
-            const currentSpread = await this.getVolatilitySpread()
-            const baseSpread = BigInt(this.volatilityExtension.spreadParams.baseSpreadBps)
-            const change = currentSpread > baseSpread ? 
-                currentSpread - baseSpread : 
-                baseSpread - currentSpread
-            
-            return change >= BigInt(thresholdBps)
-        } catch (error) {
-            console.warn('Failed to check volatility change:', error)
-            return false
-        }
-    }
-
-    /**
-     * Get volatility extension parameters
-     * 
-     * @returns Spread parameters used by this order
+     * @returns Spread parameters
      */
     public getSpreadParams() {
         return this.volatilityExtension.spreadParams
     }
 
     /**
-     * Get target token used for volatility calculation
+     * Get extension contract address
      * 
-     * @returns Target token address
+     * @returns Extension contract address
      */
-    public getTargetToken(): Address {
-        return this.volatilityExtension.targetToken
-    }
-
-    /**
-     * Preview what amounts would be with current volatility
-     * 
-     * @param amount Amount to preview
-     * @param type Whether to preview making or taking amount
-     * @returns Previewed amount with current volatility
-     */
-    public async previewAmount(
-        amount: bigint = this.makingAmount, 
-        type: 'making' | 'taking' = 'making'
-    ): Promise<bigint> {
-        if (type === 'making') {
-            return this.getMakingAmount(amount)
-        } else {
-            return this.getTakingAmount(amount)
-        }
+    public getExtensionAddress(): Address {
+        return this.volatilityExtension.address
     }
 }
