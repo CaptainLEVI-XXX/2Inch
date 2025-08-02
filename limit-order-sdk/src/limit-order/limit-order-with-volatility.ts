@@ -1,6 +1,5 @@
 // src/limit-order/limit-order-with-volatility.ts
 import {UINT_40_MAX} from '@1inch/byte-utils'
-import assert from 'assert'
 import {VolatilitySpreadExtension} from './extensions/volatility-spread/volatility-spread.extension.js'
 import {LimitOrder} from './limit-order.js'
 import {LimitOrderV4Struct, OrderInfoData} from './types.js'
@@ -12,24 +11,16 @@ import {randBigInt} from '../utils/rand-bigint.js'
 
 /**
  * @title LimitOrderWithVolatility
- * @notice Limit order with volatility-based dynamic spreads
- * 
- * This follows the exact same pattern as LimitOrderWithFee
+ * @notice dynamic Limit order based on volatility
  */
 export class LimitOrderWithVolatility extends LimitOrder {
     constructor(
-        /**
-         * Use `VolatilitySpreadExtension.customReceiver` to set custom receiver if needed
-         */
-        orderInfo: Omit<OrderInfoData, 'receiver'>,
+        orderInfo: OrderInfoData,
         makerTraits = MakerTraits.default(),
         public readonly volatilityExtension: VolatilitySpreadExtension
     ) {
-        // Following LimitOrderWithFee pattern - no need to manually enable extension
-        // The parent constructor will handle it based on extension.isEmpty()
-        
         super(
-            {...orderInfo, receiver: volatilityExtension.address},
+            orderInfo,  
             makerTraits,
             volatilityExtension.build()
         )
@@ -37,10 +28,9 @@ export class LimitOrderWithVolatility extends LimitOrder {
 
     /**
      * Set random nonce to `makerTraits` and creates `LimitOrderWithVolatility`
-     * Following LimitOrderWithFee.withRandomNonce() pattern
      */
     static withRandomNonce(
-        orderInfo: Omit<OrderInfoData, 'receiver'>,
+        orderInfo: OrderInfoData,
         volatilityExtension: VolatilitySpreadExtension,
         makerTraits = MakerTraits.default()
     ): LimitOrderWithVolatility {
@@ -51,7 +41,6 @@ export class LimitOrderWithVolatility extends LimitOrder {
 
     /**
      * Create from existing order data and extension
-     * Following LimitOrderWithFee.fromDataAndExtension() pattern
      */
     static fromDataAndExtension(
         data: LimitOrderV4Struct,
@@ -63,11 +52,6 @@ export class LimitOrderWithVolatility extends LimitOrder {
             new Address(data.receiver)
         )
 
-        assert(
-            volatilityExt.address.equal(new Address(data.receiver)),
-            `invalid order: receiver must be VolatilitySpreadCalculator extension address`
-        )
-
         return new LimitOrderWithVolatility(
             {
                 salt: BigInt(data.salt),
@@ -75,7 +59,8 @@ export class LimitOrderWithVolatility extends LimitOrder {
                 makerAsset: new Address(data.makerAsset),
                 takerAsset: new Address(data.takerAsset),
                 makingAmount: BigInt(data.makingAmount),
-                takingAmount: BigInt(data.takingAmount)
+                takingAmount: BigInt(data.takingAmount),
+                receiver: new Address(data.receiver)
             },
             makerTraits,
             volatilityExt
@@ -84,22 +69,18 @@ export class LimitOrderWithVolatility extends LimitOrder {
 
     /**
      * Calculates the `takingAmount` required from the taker with volatility spread applied
-     * Note: This is a preview method - actual calculation happens on-chain
      * 
      * @param makingAmount amount to be filled
      */
     public async getTakingAmountPreview(makingAmount = this.makingAmount): Promise<bigint> {
 
-        console.log('Getting taking amount preview...')
         const takingAmount = calcTakingAmount(
             makingAmount,
             this.makingAmount,
             this.takingAmount
         )
 
-        console.log('Taking amount preview:', takingAmount)
-
-        // try {
+        try {
             const preview = await this.volatilityExtension.previewVolatilitySpread(
                 this.makerAsset,
                 this.takerAsset
@@ -108,15 +89,14 @@ export class LimitOrderWithVolatility extends LimitOrder {
             // Apply spread: takingAmount = original + (original * spread / 10000)
             const spreadAmount = (takingAmount * preview.dynamicSpread) / 10000n
             return takingAmount + spreadAmount
-        // } catch (error) {
-        //     console.warn('Volatility preview failed, using base amount:', error)
-        //     return takingAmount
-        // }
+        } catch (error) {
+            console.warn('Volatility preview failed, using base amount:', error)
+            return takingAmount
+        }
     }
 
     /**
      * Calculates the `makingAmount` that the taker receives with volatility spread applied
-     * Note: This is a preview method - actual calculation happens on-chain
      * 
      * @param takingAmount amount to be filled
      */
