@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.13;
 
 import {Test, console} from "forge-std/Test.sol";
@@ -72,54 +72,18 @@ contract IntegrationTest is Test {
         alice = vm.addr(_alicePrivateKey);
         bob = vm.addr(_bobPrivateKey);
 
-        console.log("Alice address:", alice);
-        console.log("Bob address:", bob);
-
         calculator = new VolatilitySpreadCalculator(address(this));
 
         // Fund alice and bob
-        deal(WETH, alice, 100 ether);
-        deal(USDC, alice, 1_000_000 * 1e6);
-        deal(DAI, alice, 1_000_000 * 1e18);
-
-        deal(WETH, bob, 100 ether);
-        deal(USDC, bob, 1_000_000 * 1e6);
+        _deal(alice);
+        _deal(bob);
 
         // Approvals for the Limit Order Protocol
-        vm.prank(alice);
-        WETH.safeApprove(address(LIMIT_ORDER_PROTOCOL), type(uint256).max);
-        vm.prank(alice);
-        USDC.safeApprove(address(LIMIT_ORDER_PROTOCOL), type(uint256).max);
-        vm.prank(alice);
-        DAI.safeApprove(address(LIMIT_ORDER_PROTOCOL), type(uint256).max);
-
-        vm.prank(bob);
-        WETH.safeApprove(address(LIMIT_ORDER_PROTOCOL), type(uint256).max);
-        vm.prank(bob);
-        USDC.safeApprove(address(LIMIT_ORDER_PROTOCOL), type(uint256).max);
+        _approve(alice);
+        _approve(bob);
 
         // Setup volatility feeds (dummy setup for test)
-        address[] memory tokens = new address[](3);
-        address[] memory priceFeeds = new address[](3);
-        bool[] memory isStablecoin = new bool[](3);
-        uint256[] memory volatilityOverrides = new uint256[](3);
-
-        tokens[0] = WETH;
-        priceFeeds[0] = ETH_USD_FEED;
-        isStablecoin[0] = false;
-        volatilityOverrides[0] = 2000; // 20% for testing
-
-        tokens[1] = USDC;
-        priceFeeds[1] = USDC_USD_FEED;
-        isStablecoin[1] = true;
-        volatilityOverrides[1] = 0; // use default
-
-        tokens[2] = DAI;
-        priceFeeds[2] = address(0);
-        isStablecoin[2] = true;
-        volatilityOverrides[2] = 0;
-
-        calculator.addTokenFeeds(tokens, priceFeeds, isStablecoin, volatilityOverrides);
+        _setUpInitializationData();
     }
 
     function _buildOrderWithVolatilitySpread(
@@ -135,7 +99,6 @@ contract IntegrationTest is Test {
 
         // Build getter data: just address, the protocol will append selector + params
         bytes memory makingAmountData = abi.encodePacked(address(calculator), encodedParams);
-
         bytes memory takingAmountData = abi.encodePacked(address(calculator), encodedParams);
 
         // Calculate cumulative offsets for each extension
@@ -210,8 +173,6 @@ contract IntegrationTest is Test {
         // Verify extension hash
         uint256 expectedHash = uint256(keccak256(extension)) & ((1 << 160) - 1);
         uint256 saltHash = order.salt & ((1 << 160) - 1);
-        console.log("Expected extension hash:", expectedHash);
-        console.log("Salt extension hash:", saltHash);
         assertEq(expectedHash, saltHash, "Extension hash mismatch");
 
         // Record balances before fill
@@ -219,12 +180,6 @@ contract IntegrationTest is Test {
         uint256 aliceUsdcBefore = USDC.balanceOf(alice);
         uint256 bobWethBefore = WETH.balanceOf(bob);
         uint256 bobUsdcBefore = USDC.balanceOf(bob);
-
-        console.log("\nBalances before fill:");
-        console.log("Alice WETH:", aliceWethBefore);
-        console.log("Alice USDC:", aliceUsdcBefore);
-        console.log("Bob WETH:", bobWethBefore);
-        console.log("Bob USDC:", bobUsdcBefore);
 
         // Perform order fill as Bob (taker)
         vm.prank(bob);
@@ -236,10 +191,6 @@ contract IntegrationTest is Test {
             takerTraits,
             extension // Pass the extension as args
         );
-
-        console.log("\nFill results:");
-        console.log("Making amount (WETH):", makingAmount);
-        console.log("Taking amount (USDC):", takingAmount);
 
         // Verify balances updated correctly
         assertEq(WETH.balanceOf(alice), aliceWethBefore - makingAmount, "Alice WETH balance incorrect");
@@ -255,5 +206,42 @@ contract IntegrationTest is Test {
         console.log("Actual spread applied (bps):", actualSpreadBps);
 
         console.log("\nOrder filled successfully with volatility spread!");
+    }
+
+       function _deal(address user) internal {
+        deal(WETH, user, 100 ether);
+        deal(USDC, user, 1_000_000 * 1e6);
+    }
+
+    function _approve(address user) internal {
+        vm.startPrank(user);
+        WETH.safeApprove(address(LIMIT_ORDER_PROTOCOL), type(uint256).max);
+        USDC.safeApprove(address(LIMIT_ORDER_PROTOCOL), type(uint256).max);
+        vm.stopPrank();
+    }
+
+    function _setUpInitializationData() internal {
+        // Setup volatility feeds (dummy setup for test)
+        address[] memory tokens = new address[](3);
+        address[] memory priceFeeds = new address[](3);
+        bool[] memory isStablecoin = new bool[](3);
+        uint256[] memory volatilityOverrides = new uint256[](3);
+
+        tokens[0] = WETH;
+        priceFeeds[0] = ETH_USD_FEED;
+        isStablecoin[0] = false;
+        volatilityOverrides[0] = 2000; // 20% for testing
+
+        tokens[1] = USDC;
+        priceFeeds[1] = USDC_USD_FEED;
+        isStablecoin[1] = true;
+        volatilityOverrides[1] = 0; // use default
+
+        tokens[2] = DAI;
+        priceFeeds[2] = address(0);
+        isStablecoin[2] = true;
+        volatilityOverrides[2] = 0;
+
+        calculator.addTokenFeeds(tokens, priceFeeds, isStablecoin, volatilityOverrides);
     }
 }
