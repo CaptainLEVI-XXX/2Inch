@@ -45,15 +45,16 @@ contract IntegrationTest is Test {
     address public constant DAI = 0x6B175474E89094C44Da98b954EedeAC495271d0F;
 
     // 1inch Limit Order Protocol V4 Mainnet address
-    ILimitOrderProtocol public constant LIMIT_ORDER_PROTOCOL = ILimitOrderProtocol(0x111111125421cA6dc452d289314280a0f8842A65);
+    ILimitOrderProtocol public constant LIMIT_ORDER_PROTOCOL =
+        ILimitOrderProtocol(0x111111125421cA6dc452d289314280a0f8842A65);
 
     // Chainlink Price Feeds (for your setup)
     address public constant ETH_USD_FEED = 0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419;
     address public constant USDC_USD_FEED = 0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6;
 
     // 1inch Protocol Flags
-    uint256 private constant _HAS_EXTENSION_FLAG = 1 << 249;
-    uint256 private constant _ALLOW_MULTIPLE_FILLS_FLAG = 1 << 254;
+    uint256 public constant HAS_EXTENSION_FLAG = 1 << 249;
+    uint256 public constant ALLOW_MULTIPLE_FILLS_FLAG = 1 << 254;
 
     // Volatility spread calculator instance
     VolatilitySpreadCalculator public calculator;
@@ -160,7 +161,7 @@ contract IntegrationTest is Test {
         uint256 salt = (randomSalt << 160) | extensionHash;
 
         // Build maker traits
-        uint256 makerTraitsValue = _HAS_EXTENSION_FLAG | _ALLOW_MULTIPLE_FILLS_FLAG;
+        uint256 makerTraitsValue = HAS_EXTENSION_FLAG | ALLOW_MULTIPLE_FILLS_FLAG;
 
         order = ILimitOrderProtocol.Order({
             salt: salt,
