@@ -11,26 +11,6 @@
 The Volatility Spread Extension enhances the 1inch Limit Order Protocol by introducing market-adaptive pricing through real-time volatility analysis. This extension enables sophisticated market-making strategies that automatically adjust spreads based on market conditions, reducing risk during volatile periods while maintaining competitive pricing during stable markets.
 
 
-### How It Works
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant SDK
-    participant Extension
-    participant Chainlink
-    participant Protocol
-    
-    User->>SDK: Create order with volatility params
-    SDK->>Extension: Encode spread parameters
-    SDK->>User: Return order for signing
-    User->>Protocol: Submit signed order
-    Protocol->>Extension: Calculate dynamic amounts
-    Extension->>Chainlink: Query volatility data
-    Chainlink-->>Extension: Return volatility
-    Extension-->>Protocol: Return adjusted amounts
-    Protocol->>User: Execute trade with spread
-```
 ## Quick Start
 
 ### Basic Usage
