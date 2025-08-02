@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.13;
 
 import {Test, console} from "forge-std/Test.sol";
@@ -9,15 +9,12 @@ import {MakerTraits, MakerTraitsLib} from "../src/libraries/MakerTraitLib.sol";
 import {IOrderMixin} from "../src/interfaces/IAmountGetter.sol";
 
 /**
- * @title WorkingVolatilitySpreadTest
- * @notice This test demonstrates how to integrate volatility-based spreads with 1inch Limit Orders
- * @dev The key issue was with order structure and signing. This solution addresses that.
+ * @title VolatilitySpreadTest
+ * @notice This test demonstrates local testing of the volatility spread calculator without 1inch integration
  */
-contract WorkingVolatilitySpreadTest is Test {
+contract VolatilitySpreadTest is Test {
     using SafeTransferLib for address;
     using MakerTraitsLib for MakerTraits;
-
-    // ============ INTERFACES ============
 
     // ============ CONSTANTS ============
     uint256 constant MAINNET_FORK_BLOCK = 20_800_000;
@@ -47,8 +44,8 @@ contract WorkingVolatilitySpreadTest is Test {
         alice = vm.addr(aliceKey);
         bob = vm.addr(bobKey);
 
-        console.log("Alice:", alice);
-        console.log("Bob:", bob);
+        vm.label(alice, "Alice");
+        vm.label(bob, "Bob");
 
         // Deploy calculator
         calculator = new VolatilitySpreadCalculator(address(this));
@@ -74,7 +71,6 @@ contract WorkingVolatilitySpreadTest is Test {
 
     /**
      * @notice Test volatility spread calculation without 1inch integration
-     * @dev This demonstrates the core functionality works correctly
      */
     function testVolatilitySpreadCalculation() public view {
         // Setup spread parameters
@@ -91,7 +87,7 @@ contract WorkingVolatilitySpreadTest is Test {
             WETH, params.baseSpreadBps, params.volatilityMultiplier, params.maxSpreadBps, params.volatilityWindow
         );
 
-        console.log("WETH Volatility (bps):", volatility);
+        console.log("WETH Volatility (bps): ", volatility);
         console.log("Dynamic Spread (bps):", spread);
 
         // Expected: 50 base + (20% * 2) = 50 + 40 = 90 bps
@@ -111,7 +107,6 @@ contract WorkingVolatilitySpreadTest is Test {
 
     /**
      * @notice Demonstrate order creation with volatility spread
-     * @dev Shows how to build orders that would use the volatility calculator
      */
     function testOrderCreationWithSpread() public view {
         // Create spread parameters
