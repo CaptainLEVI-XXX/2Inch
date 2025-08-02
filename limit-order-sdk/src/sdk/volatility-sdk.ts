@@ -16,7 +16,6 @@ export interface VolatilityConfig {
 
 /**
  * SDK for creating limit orders with volatility-based dynamic spreads
- * This follows the same pattern as the main Sdk class
  */
 export class VolatilitySdk {
     private readonly provider: Provider
@@ -96,8 +95,6 @@ export class VolatilitySdk {
 
     /**
      * Create order with random nonce
-     * Convenience method following Sdk pattern
-     * 
      * @param orderInfo Order information
      * @param spreadParams Volatility spread parameters
      * @param extra Optional extras
