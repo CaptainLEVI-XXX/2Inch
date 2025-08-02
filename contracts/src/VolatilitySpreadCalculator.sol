@@ -194,7 +194,7 @@ contract VolatilitySpreadCalculator is IAmountGetter {
         returns (uint256 currentVolatility)
     {
         return _volatilityStorage.previewVolatility(token, volatilityWindow);
-    }   
+    }
 
     /**
      * @notice Update price history for a token
