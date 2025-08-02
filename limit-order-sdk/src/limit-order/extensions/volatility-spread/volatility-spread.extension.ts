@@ -1,13 +1,12 @@
-// src/limit-order/extensions/volatility-spread/volatility-spread.extension.ts
 import {ethers, Contract, Provider} from 'ethers'
 import {ExtensionBuilder} from '../extension-builder.js'
 import {Extension} from '../extension.js'
 import {Address} from '../../../address.js'
 import {Interaction} from '../../interaction.js'
-
+  
 /**
  * @title VolatilitySpreadExtension
- * @notice Extension for volatility-based dynamic spreads following FeeTakerExtension pattern
+ * @notice Extension for volatility-based dynamic spreads
  */
 export class VolatilitySpreadExtension {
     private constructor(
@@ -19,7 +18,6 @@ export class VolatilitySpreadExtension {
 
     /**
      * Create new VolatilitySpreadExtension
-     * Following the pattern from FeeTakerExtension.new()
      */
     static new(
         address: Address,
@@ -49,7 +47,6 @@ export class VolatilitySpreadExtension {
 
     /**
      * Build Extension object for use in limit orders
-     * Following the exact pattern from FeeTakerExtension.build()
      */
     build(): Extension {
         const amountGetterData = this.buildAmountGetterData()
@@ -70,14 +67,11 @@ export class VolatilitySpreadExtension {
 
     /**
      * Build data for VolatilitySpreadCalculator amount getter
-     * This follows the same pattern as FeeTakerExtension.buildAmountGetterData()
-     * 
      * The data will be passed as the last parameter (extraData) to getTakingAmount/getMakingAmount
      * 
      * @private
      */
     private buildAmountGetterData(): string {
-        // Use ABI encoding to match the Foundry test approach
         // The contract expects properly ABI encoded SpreadParams struct
         const abiCoder = ethers.AbiCoder.defaultAbiCoder()
         
@@ -98,7 +92,6 @@ export class VolatilitySpreadExtension {
 
     /**
      * Create from existing Extension (for deserialization)
-     * Following FeeTakerExtension.fromExtension() pattern
      */
     static fromExtension(extension: Extension, expectedContract: Address): VolatilitySpreadExtension {
         const extensionAddress = Address.fromFirstBytes(extension.makingAmountData)
@@ -143,92 +136,26 @@ const spreadParams: SpreadParams = {
         )
     }
 
-    // /**
-    //  * Preview volatility and dynamic spread
-    //  * Requires provider to be set during construction
-    //  */
-    // async previewVolatilitySpread(makerAsset: Address, takerAsset: Address): Promise<VolatilityPreview> {
-    //     if (!this.contract) {
-    //         throw new Error('Provider not available - pass provider during construction')
-    //     }
-
-    //     // try {
-    //         // Determine target token based on useTargetToken flag
-    //         const targetToken = this.spreadParams.useTargetToken ? makerAsset : takerAsset
-
-    //         console.log('targetToken', targetToken)
-            
-    //         const result = await this.contract.previewSpread(
-    //             targetToken.toString(),
-    //             this.spreadParams.baseSpreadBps,
-    //             this.spreadParams.volatilityMultiplier,
-    //             this.spreadParams.maxSpreadBps,
-    //             this.spreadParams.volatilityWindow
-    //         )
-    //         console.log('result', result)
-
-    //         return {
-    //             currentVolatility: BigInt(result[0]),
-    //             dynamicSpread: BigInt(result[1]),
-    //             targetToken: targetToken.toString(),
-    //             spreadParams: this.spreadParams
-    //         }
-    //     // } catch (error: any) {
-
-    //     //     console.error()
-    //     //     throw new Error(`Failed to preview volatility: ${error.message}`)
-    //     // }
-    // }
-
     async previewVolatilitySpread(makerAsset: Address, takerAsset: Address): Promise<VolatilityPreview> {
+
         if (!this.contract) {
             throw new Error('Provider not available - pass provider during construction')
         }
+        const targetToken = this.spreadParams.useTargetToken ? makerAsset : takerAsset;
+        const result = await this.contract.previewSpread.staticCall(
+            targetToken.toString(),
+            this.spreadParams.baseSpreadBps,
+            this.spreadParams.volatilityMultiplier,
+            this.spreadParams.maxSpreadBps,
+            this.spreadParams.volatilityWindow
+        );
     
-        try {
-            // Determine target token based on useTargetToken flag
-            const targetToken = this.spreadParams.useTargetToken ? makerAsset : takerAsset;
-            
-            console.log('Calling previewSpread with params:', {
-                tokenA: targetToken.toString(),
-                baseSpreadBps: this.spreadParams.baseSpreadBps,
-                volatilityMultiplier: this.spreadParams.volatilityMultiplier,
-                maxSpreadBps: this.spreadParams.maxSpreadBps,
-                volatilityWindow: this.spreadParams.volatilityWindow
-            });
-    
-            // Explicitly call the contract with named parameters
-            const result = await this.contract.previewSpread.staticCall(
-                targetToken.toString(),
-                this.spreadParams.baseSpreadBps,
-                this.spreadParams.volatilityMultiplier,
-                this.spreadParams.maxSpreadBps,
-                this.spreadParams.volatilityWindow
-            );
-    
-            console.log('Raw result from contract:', result);
-    
-            // Ensure we have both return values
-            if (!result || result.length < 2) {
-                throw new Error('Invalid return value from previewSpread');
-            }
-    
-            return {
-                currentVolatility: BigInt(result[0].toString()),
-                dynamicSpread: BigInt(result[1].toString()),
-                targetToken: targetToken.toString(),
-                spreadParams: this.spreadParams
-            };
-        } catch (error: any) {
-            console.error('Error in previewVolatilitySpread:', {
-                error: error.message,
-                stack: error.stack,
-                code: error.code,
-                reason: error.reason,
-                data: error.data
-            });
-            throw new Error(`Failed to preview volatility: ${error.message}`);
-        }
+        return {
+            currentVolatility: BigInt(result[0].toString()),
+            dynamicSpread: BigInt(result[1].toString()),
+            targetToken: targetToken.toString(),
+            spreadParams: this.spreadParams
+        };
     }
 
     /**
@@ -264,35 +191,6 @@ export interface VolatilityPreview {
 
 // Helper for creating spread parameters
 export class SpreadParamsBuilder {
-    static conservative(): SpreadParams {
-        return {
-            baseSpreadBps: 25,
-            volatilityMultiplier: 100,
-            maxSpreadBps: 150,
-            volatilityWindow: 1,
-            useTargetToken: false
-        }
-    }
-
-    static moderate(): SpreadParams {
-        return {
-            baseSpreadBps: 50,
-            volatilityMultiplier: 200,
-            maxSpreadBps: 300,
-            volatilityWindow: 0,
-            useTargetToken: false
-        }
-    }
-
-    static aggressive(): SpreadParams {
-        return {
-            baseSpreadBps: 100,
-            volatilityMultiplier: 500,
-            maxSpreadBps: 1000,
-            volatilityWindow: 2,
-            useTargetToken: false
-        }
-    }
 
     static custom(params: SpreadParams): SpreadParams {
         // Validate parameters
@@ -312,11 +210,8 @@ export class SpreadParamsBuilder {
         return params
     }
 }
-
-// Contract ABI - minimal interface needed
-// Volatility calculator ABI - minimal interface needed
-const VOLATILITY_CALCULATOR_ABI = [
-    {
+ const VOLATILITY_CALCULATOR_ABI = [ 
+        {
         "inputs": [
             {
                 "internalType": "address",
@@ -359,5 +254,5 @@ const VOLATILITY_CALCULATOR_ABI = [
         ],
         "stateMutability": "view",
         "type": "function"
-    }
-];
+}]
+
