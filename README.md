@@ -81,26 +81,6 @@ console.log(`Dynamic spread: ${preview.dynamicSpread / 100}%`);
 ```
 
 
-
-##### `previewVolatility`
-
-Preview current volatility and calculated spread without creating an order.
-
-```typescript
-async previewVolatility(
-  makerAsset: Address,
-  takerAsset: Address,
-  spreadParams: SpreadParams
-): Promise<VolatilityPreview>
-
-interface VolatilityPreview {
-  currentVolatility: bigint;  // Current volatility (basis points)
-  dynamicSpread: bigint;      // Calculated spread (basis points)
-  targetToken: string;        // Token used for volatility
-  spreadParams: SpreadParams; // Parameters used
-}
-```
-
 ### SpreadParams
 
 Configuration for volatility-based spread calculation.
