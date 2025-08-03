@@ -13,7 +13,6 @@ import {
   VolatilitySdk,
   Address,
   MakerTraits,
-  VolatilitySpreadExt,
   randBigInt,
   LimitOrderContract,
   TakerTraits,
@@ -37,12 +36,6 @@ const ERC20_ABI = [
   'function allowance(address owner, address spender) view returns (uint256)',
   'function balanceOf(address owner) view returns (uint256)'
 ];
-
-function requireEnv(varName: string): string {
-  const val = process.env[varName];
-  if (!val) throw new Error(`Missing required env var: ${varName}`);
-  return val;
-}
 
 async function ensureBatchApprovals(
   wallet: Wallet,
@@ -106,9 +99,9 @@ async function deployVolatilityExtension() {
   );
 
   return contract;
-}
+} 
 
-function printOrderDetails(order: VolatilitySdk.Order, chainId: number) {
+function printOrderDetails(order, chainId: number) {
   console.log(`Hash: ${order.getOrderHash(chainId)}`);
   console.log(`Making: ${formatEther(order.makingAmount)} ${order.makerAsset}`);
   console.log(`Taking: ${formatUnits(order.takingAmount, 6)} ${order.takerAsset}`);
@@ -170,6 +163,8 @@ async function runVolatilitySdkOrderDemo() {
     takerTraits,
     ONE_ETH
   );
+
+  console.log(`Fill Order Calldata: ${calldata}`);
 
   const wethContract = new ethers.Contract(WETH, ERC20_ABI, provider);
   const usdcContract = new ethers.Contract(USDC, ERC20_ABI, provider);
