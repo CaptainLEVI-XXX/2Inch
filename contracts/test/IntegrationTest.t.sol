@@ -208,7 +208,7 @@ contract IntegrationTest is Test {
         console.log("\nOrder filled successfully with volatility spread!");
     }
 
-       function _deal(address user) internal {
+    function _deal(address user) internal {
         deal(WETH, user, 100 ether);
         deal(USDC, user, 1_000_000 * 1e6);
     }
