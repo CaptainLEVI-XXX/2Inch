@@ -164,9 +164,36 @@ library ChainlinkVolatilityLib {
     }
 
     function _calculateVolatilityFromPrices(uint256[7] storage prices, uint256 count) private view returns (uint256) {
-        // Similar logic for 7-day array
-        // Implementation details omitted for brevity
-        return DEFAULT_VOLATILITY;
+        if (count < 2) return DEFAULT_VOLATILITY;
+
+        uint256 sumReturns = 0;
+        uint256 sumSquaredReturns = 0;
+        uint256 validSamples = 0;
+
+        for (uint256 i = 1; i < count; i++) {
+            if (prices[i] == 0 || prices[i - 1] == 0) continue;
+
+            // Calculate return as percentage (in basis points)
+            uint256 return_ = prices[i].mulDiv(VOLATILITY_SCALE, prices[i - 1]);
+            if (return_ > VOLATILITY_SCALE) {
+                return_ = return_ - VOLATILITY_SCALE;
+            } else {
+                return_ = VOLATILITY_SCALE - return_;
+            }
+
+            sumReturns += return_;
+            sumSquaredReturns += return_ * return_;
+            validSamples++;
+        }
+
+        if (validSamples < 2) return DEFAULT_VOLATILITY;
+
+        // Calculate variance
+        uint256 meanReturn = sumReturns / validSamples;
+        uint256 variance = sumSquaredReturns / validSamples - (meanReturn * meanReturn);
+
+        // Return standard deviation (simplified square root)
+        return variance.sqrt();
     }
 
     // ============ PRICE UPDATE FUNCTIONS ============
