@@ -22,16 +22,6 @@ contract VolatilitySpreadCalculator is IAmountGetter {
     uint256 public constant BASIS_POINTS = 10000;
     uint256 public constant MAX_SPREAD = 1000;
 
-    // ============ EVENTS ============
-
-    event SpreadCalculated(
-        bytes32 indexed orderHash,
-        address indexed token,
-        uint256 volatility,
-        uint256 dynamicSpread,
-        uint256 adjustedAmount
-    );
-
     // ============ ERRORS ============
 
     error SpreadTooHigh();
