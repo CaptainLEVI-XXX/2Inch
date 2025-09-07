@@ -1,10 +1,11 @@
-# 1inch Limit Order Protocol Extension - Dynamic Spread Limit Order
+# 1inch Limit Order Protocol Extension - Dynamic Spread Limit Order(Eth Global Winner)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Solidity](https://img.shields.io/badge/Solidity-0.8.19+-363636?logo=solidity)](https://soliditylang.org/)
 
 > Dynamic pricing for limit orders based on real-time market volatility
+>  Learn more :  <a href= "https://ethglobal.com/showcase/dynamicspreadlop-aq1tk"> Eth Global</a>
 
 ## Overview
 
